@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable, Share } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable, Share, Vibration } from 'react-native';
+import * as Speech from 'expo-speech';
+import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import seedData from './seed_data.json'; 
@@ -136,7 +138,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -147,6 +149,59 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercises, setEditingExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
+  const [restTimerSeconds, setRestTimerSeconds] = useState(null);
+  const [isTimerMuted, setIsTimerMuted] = useState(false);
+  const restTimerRef = useRef(null);
+  const restTimerIntervalRef = useRef(null);
+  const isTimerMutedRef = useRef(false);
+  const inputsRef = useRef(inputs);
+  useEffect(() => { inputsRef.current = inputs; }, [inputs]);
+  useEffect(() => { isTimerMutedRef.current = isTimerMuted; }, [isTimerMuted]);
+
+  const cancelRestTimer = () => {
+    if (restTimerIntervalRef.current) {
+      clearInterval(restTimerIntervalRef.current);
+      restTimerIntervalRef.current = null;
+    }
+    Speech.stop();
+    restTimerRef.current = null;
+    setRestTimerSeconds(null);
+  };
+
+  const startRestTimer = () => {
+    if (restTimerIntervalRef.current) {
+      clearInterval(restTimerIntervalRef.current);
+      restTimerIntervalRef.current = null;
+    }
+    restTimerRef.current = 60;
+    setRestTimerSeconds(60);
+    restTimerIntervalRef.current = setInterval(() => {
+      restTimerRef.current = restTimerRef.current - 1;
+      const s = restTimerRef.current;
+      if (!isTimerMutedRef.current) {
+        if (s === 30) Speech.speak('30 seconds', { language: 'en', iosVoiceId: null });
+        if (s === 10) Speech.speak('10 seconds', { language: 'en', iosVoiceId: null });
+      }
+      if (s <= 0) {
+        if (!isTimerMutedRef.current) {
+          Speech.speak('Time to lift!', { language: 'en', iosVoiceId: null });
+          if (Platform.OS !== 'web') Vibration.vibrate(400);
+        }
+        clearInterval(restTimerIntervalRef.current);
+        restTimerIntervalRef.current = null;
+        restTimerRef.current = null;
+        setRestTimerSeconds(null);
+        return;
+      }
+      setRestTimerSeconds(s);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (initialType) setTodaysType(initialType);
@@ -355,16 +410,25 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         <TouchableOpacity style={styles.successSecondaryBtn} onPress={onStartTwoADay}>
           <Text style={styles.successSecondaryBtnText}>Start Another Session (Two-a-Day)</Text>
         </TouchableOpacity>
+        {canUndo && onUndoLastSession ? (
+          <TouchableOpacity style={styles.successUndoBtn} onPress={onUndoLastSession}>
+            <Text style={styles.successUndoBtnText}>Undo — remove this workout from history</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   }
 
+  const restTimerFormatted = restTimerSeconds != null ? `${Math.floor(restTimerSeconds / 60)}:${String(restTimerSeconds % 60).padStart(2, '0')}` : '';
+
   return (
-    <View style={{ flex: 1 }}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={{ flex: 1 }}>
       <ScrollView 
         contentContainerStyle={styles.scroll} 
         keyboardShouldPersistTaps="always"
         removeClippedSubviews={false} // Prevents iOS from "unmounting" middle inputs
+        keyboardDismissMode="on-drag"
       >
         <Text style={styles.title}>{format(new Date(), 'EEEE').toUpperCase()}</Text>
         <View style={styles.row}>
@@ -483,7 +547,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                       <TextInput
                         style={styles.targetRepsInput}
                         placeholder="e.g. 8"
-                        placeholderTextColor="#555"
+                        placeholderTextColor="#A0A0A0"
                         value={ex.targetReps}
                         onChangeText={(v) => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: v } : e))}
                         keyboardType="number-pad"
@@ -498,7 +562,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   <TextInput
                     style={styles.modalAddInput}
                     placeholder="New exercise name"
-                    placeholderTextColor="#666"
+                    placeholderTextColor="#A0A0A0"
                     value={newExerciseName}
                     onChangeText={setNewExerciseName}
                   />
@@ -542,7 +606,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 <TextInput
                   style={[styles.noteInput, { flex: 1, minHeight: 36 }]}
                   placeholder="Replacement (today only)"
-                  placeholderTextColor="#666"
+                  placeholderTextColor="#A0A0A0"
                   value={subInputValue}
                   onChangeText={setSubInputValue}
                 />
@@ -567,9 +631,18 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
               const isMarty = item.exercise === 'Marty St Louis';
               const isBWChecked = inputs[item.exercise]?.sets?.[setIdx]?.weight === 'BW';
               const prevSet = !isSubbed && item.sets[setIdx] ? item.sets[setIdx] : null;
+              const setIndices = isSubbed ? Array.from({ length: subSetCount[item.exercise] ?? 1 }, (_, i) => i) : item.sets.map((_, i) => i);
+              const activeSetIndex = setIndices.find((i) => {
+                const w = inputs[item.exercise]?.sets?.[i]?.weight;
+                const r = inputs[item.exercise]?.sets?.[i]?.reps;
+                const hasWeight = w != null && String(w).trim() !== '';
+                const hasReps = r != null && String(r).trim() !== '';
+                return !hasWeight || !hasReps;
+              });
+              const isActiveSet = activeSetIndex === setIdx;
 
               return (
-                <View key={`set-row-${exIdx}-${setIdx}`} style={styles.setRowContainer}>
+                <View key={`set-row-${exIdx}-${setIdx}`} style={[styles.setRowContainer, isActiveSet && styles.activeSetRow]}>
                   <View style={styles.setLabelRow}>
                     <Text style={styles.setNumber}>SET {setIdx + 1}</Text>
                     <Text style={styles.lastStats}>{prevSet ? `Last: ${prevSet.weight || 'BW'} × ${prevSet.reps}` : '—'}</Text>
@@ -580,10 +653,11 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                         <TextInput 
                           style={styles.dualInput} 
                           placeholder="Lbs" 
-                          placeholderTextColor="#444" 
+                          placeholderTextColor="#A0A0A0" 
                           keyboardType="number-pad"
                           value={inputs[item.exercise]?.sets?.[setIdx]?.weight || ''}
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
+                          onFocus={cancelRestTimer}
                         />
                         {showBWButton(item.exercise) && (
                           <TouchableOpacity style={[styles.bwBadge, isBWChecked && styles.bwBadgeActive]} onPress={() => updateSetInput(item.exercise, setIdx, 'weight', isBWChecked ? '' : 'BW')}>
@@ -595,10 +669,21 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                     <TextInput 
                       style={[styles.dualInput, isMarty && { flex: 1 }]} 
                       placeholder={item.targetReps ? `Reps (${item.targetReps})` : 'Reps'} 
-                      placeholderTextColor="#444" 
+                      placeholderTextColor="#A0A0A0" 
                       keyboardType="number-pad"
                       value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
                       onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
+                      onFocus={cancelRestTimer}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          const inp = inputsRef.current;
+                          const w = inp[item.exercise]?.sets?.[setIdx]?.weight;
+                          const r = inp[item.exercise]?.sets?.[setIdx]?.reps;
+                          const hasWeight = w != null && String(w).trim() !== '';
+                          const hasReps = r != null && String(r).trim() !== '';
+                          if (hasWeight && hasReps) startRestTimer();
+                        }, 50);
+                      }}
                     />
                   </View>
                 </View>
@@ -631,7 +716,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
             <TextInput
               style={styles.noteInput}
               placeholder="Add notes for this exercise..."
-              placeholderTextColor="#666"
+              placeholderTextColor="#A0A0A0"
               keyboardType="default"
               returnKeyType="done"
               multiline
@@ -654,7 +739,41 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           <Text style={styles.finishText}>FINISH ✓</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+      {restTimerSeconds != null && (
+        <View style={styles.restTimerBar}>
+          <Text style={styles.restTimerText}>{restTimerFormatted}</Text>
+          <View style={styles.restTimerButtons}>
+            <TouchableOpacity style={styles.restTimerMuteBtn} onPress={() => setIsTimerMuted(m => !m)}>
+              <Ionicons name={isTimerMuted ? 'volume-mute' : 'volume-high'} size={22} color={isTimerMuted ? '#888' : THEME.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.restTimerBtn} onPress={() => {
+              const next = Math.max(0, restTimerSeconds - 30);
+              restTimerRef.current = next;
+              setRestTimerSeconds(next > 0 ? next : null);
+              if (next <= 0) {
+                if (!isTimerMutedRef.current) {
+                  Speech.speak('Time to lift!', { language: 'en' });
+                  if (Platform.OS !== 'web') Vibration.vibrate(400);
+                }
+                cancelRestTimer();
+              }
+            }}>
+              <Text style={styles.restTimerBtnText}>−30s</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.restTimerBtn} onPress={() => {
+              restTimerRef.current = restTimerSeconds + 30;
+              setRestTimerSeconds(restTimerSeconds + 30);
+            }}>
+              <Text style={styles.restTimerBtnText}>+30s</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.restTimerBtn, styles.restTimerSkipBtn]} onPress={cancelRestTimer}>
+              <Text style={styles.restTimerSkipBtnText}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -956,7 +1075,7 @@ const HistoryScreen = ({ history }) => {
 
   return (
     <View style={{ flex: 1 }}>
-      <TextInput style={styles.searchBar} placeholder="Search history..." placeholderTextColor="#666" onChangeText={setSearch} />
+      <TextInput style={styles.searchBar} placeholder="Search history..." placeholderTextColor="#A0A0A0" onChangeText={setSearch} />
       <FlatList
         data={sessions}
         keyExtractor={(item, index) => `hist-${item.date}-${item.completedAt || 'legacy'}-${index}`}
@@ -991,6 +1110,8 @@ export default function App() {
   const [abTemplates, setAbTemplates] = useState(DEFAULT_AB_TEMPLATES);
   const [lastAbWorkout, setLastAbWorkout] = useState(null); // { date, type } or null
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
+  const [lastCompletedAt, setLastCompletedAt] = useState(null);
+  const [lastCompletedWorkout, setLastCompletedWorkout] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -1052,6 +1173,8 @@ export default function App() {
       const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
       const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
       setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+      setLastCompletedAt(logs[0]?.completedAt ?? null);
+      setLastCompletedWorkout(completed);
       setShowSuccessScreen(true);
       // If this workout was from an override, set its source to today's date for next time
       if (logs.length > 0 && overrides[completed.type]?.[completed.variation]) {
@@ -1081,6 +1204,28 @@ export default function App() {
     }
   };
 
+  const onUndoLastSession = async () => {
+    if (lastCompletedAt == null || !lastCompletedWorkout) return;
+    const filtered = history.filter(log => log.completedAt !== lastCompletedAt);
+    setHistory(filtered);
+    await AsyncStorage.setItem('workout_history', JSON.stringify(filtered));
+    await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(lastCompletedWorkout));
+    setSuggestedWorkout(lastCompletedWorkout);
+    setLastCompletedAt(null);
+    setLastCompletedWorkout(null);
+    setShowSuccessScreen(false);
+    if (overrides[lastCompletedWorkout.type]?.[lastCompletedWorkout.variation]) {
+      const next = { ...overrides };
+      const v = next[lastCompletedWorkout.type]?.[lastCompletedWorkout.variation];
+      if (v) {
+        const { lastCompletedDate, ...rest } = v;
+        next[lastCompletedWorkout.type] = { ...next[lastCompletedWorkout.type], [lastCompletedWorkout.variation]: rest };
+        setOverrides(next);
+        await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
+      }
+    }
+  };
+
   if (loading) return <View style={[styles.container, {justifyContent:'center'}]}><ActivityIndicator size="large" color="#CCFF00" /></View>;
 
   return (
@@ -1090,7 +1235,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} /> : <HistoryScreen history={history} />}</View>
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -1109,6 +1254,8 @@ const styles = StyleSheet.create({
   successPrimaryBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
   successSecondaryBtn: { paddingVertical: 16, paddingHorizontal: 24, borderRadius: 12, borderWidth: 2, borderColor: THEME.accent, minWidth: 200, alignItems: 'center' },
   successSecondaryBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold' },
+  successUndoBtn: { marginTop: 24, paddingVertical: 12, paddingHorizontal: 16 },
+  successUndoBtnText: { color: THEME.dim, fontSize: 14 },
   scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
   row: { flexDirection: 'row', gap: 15, marginBottom: 20 },
@@ -1116,26 +1263,35 @@ const styles = StyleSheet.create({
   cycleLabel: { color: '#666', fontSize: 10, fontWeight: 'bold' },
   cycleValue: { color: '#CCFF00', fontSize: 24, fontWeight: '900' },
   sourceDate: { color: '#444', fontSize: 12, marginBottom: 20, fontWeight: '600' },
-  exCard: { backgroundColor: '#0a0a0a', padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#333' },
+  exCard: { backgroundColor: '#1E1E1E', padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#333' },
   exName: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
   prevNote: { color: '#CCFF00', fontSize: 13, fontStyle: 'italic', marginBottom: 15, opacity: 0.8 },
-  noteInput: { marginTop: 8, backgroundColor: '#111', color: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontSize: 13, minHeight: 40, textAlignVertical: 'top' },
+  noteInput: { marginTop: 8, backgroundColor: '#242424', color: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, minHeight: 40, textAlignVertical: 'top' },
   setRowContainer: { marginBottom: 15 },
+  activeSetRow: { borderWidth: 2, borderColor: THEME.accent, borderRadius: 8, padding: 8, backgroundColor: 'rgba(204, 255, 0, 0.06)' },
   setLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   setNumber: { color: '#666', fontSize: 10, fontWeight: 'bold' },
-  lastStats: { color: '#444', fontSize: 10, fontWeight: 'bold' },
+  lastStats: { color: '#999', fontSize: 11, fontWeight: 'bold' },
   inputGroup: { flexDirection: 'row', gap: 10 },
-  dualInput: { flex: 1, backgroundColor: '#1A1A1A', color: '#fff', padding: 12, borderRadius: 8, textAlign: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#222' },
+  dualInput: { flex: 1, backgroundColor: '#242424', color: '#fff', padding: 12, borderRadius: 8, textAlign: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#333', fontSize: 16 },
   bwBadge: { position: 'absolute', right: 8, top: 10, backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: '#333' },
   bwBadgeText: { color: '#CCFF00', fontSize: 10, fontWeight: '900' },
   bwBadgeActive: { backgroundColor: '#CCFF00', borderColor: '#CCFF00' },
   bwBadgeTextActive: { color: '#000' },
   finishBtn: { backgroundColor: '#CCFF00', padding: 20, borderRadius: 8, alignItems: 'center', marginVertical: 20 },
   finishText: { fontWeight: '900', fontSize: 18, color: '#000' },
+  restTimerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#111', borderTopWidth: 1, borderTopColor: THEME.accent, borderLeftWidth: 4, borderLeftColor: THEME.accent },
+  restTimerText: { color: THEME.accent, fontSize: 24, fontWeight: '900' },
+  restTimerButtons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  restTimerBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
+  restTimerBtnText: { color: THEME.accent, fontSize: 14, fontWeight: 'bold' },
+  restTimerMuteBtn: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  restTimerSkipBtn: { backgroundColor: 'transparent', borderColor: '#555' },
+  restTimerSkipBtnText: { color: '#888', fontSize: 14, fontWeight: '600' },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, borderColor: '#222', backgroundColor: '#000', paddingTop: 8, paddingBottom: 8 },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   tabText: { color: '#666', fontWeight: 'bold' },
-  searchBar: { backgroundColor: '#111', color: '#fff', padding: 15, margin: 20, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontWeight: 'bold' },
+  searchBar: { backgroundColor: '#111', color: '#fff', padding: 15, margin: 20, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontWeight: 'bold', fontSize: 16 },
   sessionCard: { backgroundColor: '#111', borderRadius: 12, padding: 15, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: '#CCFF00' },
   sessionHeader: { color: '#CCFF00', fontSize: 12, fontWeight: '900', marginBottom: 10, letterSpacing: 1 },
   logLine: { marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#222', paddingBottom: 5 },
@@ -1197,10 +1353,10 @@ const styles = StyleSheet.create({
   stepperValue: { color: '#fff', fontSize: 15, fontWeight: 'bold', minWidth: 24, textAlign: 'center' },
   targetRepsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   targetRepsLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
-  targetRepsInput: { width: 56, backgroundColor: '#1a1a1a', color: '#fff', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 14, fontWeight: '600' },
+  targetRepsInput: { width: 56, backgroundColor: '#1a1a1a', color: '#fff', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, fontWeight: '600' },
   modalAddSection: { marginTop: 8 },
   modalAddRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  modalAddInput: { flex: 1, backgroundColor: '#111', color: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#222', fontSize: 15 },
+  modalAddInput: { flex: 1, backgroundColor: '#111', color: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#222', fontSize: 16 },
   modalAddBtn: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', justifyContent: 'center' },
   modalAddBtnText: { color: '#CCFF00', fontSize: 14, fontWeight: 'bold' },
   modalFooter: { padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#000' },
