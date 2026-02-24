@@ -9,6 +9,25 @@ import seedData from './seed_data.json';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const THEME = { bg: '#000', card: '#111', text: '#fff', accent: '#CCFF00', highlight: '#222', dim: '#444' };
 
+const isWeb = typeof window !== 'undefined' && Platform.OS === 'web';
+const speakTimer = (text) => {
+  if (isWeb && typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+    const u = new window.SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    window.speechSynthesis.speak(u);
+  } else {
+    Speech.speak(text, { language: 'en' });
+  }
+};
+const stopTimerSpeech = () => {
+  if (isWeb && typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  } else {
+    Speech.stop();
+  }
+};
+
 // Order: Push A → Pull A → Legs A → Push B → Pull B → Legs B → Push C → Pull C → Legs KOT
 const WORKOUT_SEQUENCE = [
   { type: 'Push', variation: 'A' }, { type: 'Pull', variation: 'A' }, { type: 'Legs', variation: 'A' },
@@ -163,7 +182,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
       clearInterval(restTimerIntervalRef.current);
       restTimerIntervalRef.current = null;
     }
-    Speech.stop();
+    stopTimerSpeech();
     restTimerRef.current = null;
     setRestTimerSeconds(null);
   };
@@ -179,12 +198,12 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
       restTimerRef.current = restTimerRef.current - 1;
       const s = restTimerRef.current;
       if (!isTimerMutedRef.current) {
-        if (s === 30) Speech.speak('30 seconds', { language: 'en', iosVoiceId: null });
-        if (s === 10) Speech.speak('10 seconds', { language: 'en', iosVoiceId: null });
+        if (s === 30) speakTimer('30 seconds');
+        if (s === 10) speakTimer('10 seconds');
       }
       if (s <= 0) {
         if (!isTimerMutedRef.current) {
-          Speech.speak('Time to lift!', { language: 'en', iosVoiceId: null });
+          speakTimer('Time to lift!');
           if (Platform.OS !== 'web') Vibration.vibrate(400);
         }
         clearInterval(restTimerIntervalRef.current);
@@ -752,7 +771,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
               setRestTimerSeconds(next > 0 ? next : null);
               if (next <= 0) {
                 if (!isTimerMutedRef.current) {
-                  Speech.speak('Time to lift!', { language: 'en' });
+                  speakTimer('Time to lift!');
                   if (Platform.OS !== 'web') Vibration.vibrate(400);
                 }
                 cancelRestTimer();
