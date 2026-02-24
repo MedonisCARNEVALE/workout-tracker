@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable, Share } from 'react-native';
 import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import seedData from './seed_data.json'; 
@@ -15,6 +15,46 @@ const WORKOUT_SEQUENCE = [
 ];
 const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
+const AB_TEMPLATES_KEY = 'workout_tracker_ab_templates';
+const LAST_AB_WORKOUT_KEY = 'workout_tracker_last_ab_workout';
+
+const DEFAULT_AB_TEMPLATES = {
+  A: { exercise: 'Decline weighted abs', note: '', targetReps: 'fail', sets: [{ weight: '35', reps: 'fail' }, { weight: '35', reps: 'fail' }, { weight: '35', reps: 'fail' }] },
+  B: { exercise: 'Ab crunch machine', note: '', targetReps: 'fail', sets: [{ weight: '180', reps: 'fail' }, { weight: '180', reps: 'fail' }, { weight: '180', reps: 'fail' }] },
+  C: { exercise: 'Abs oblique machine', note: '', targetReps: 'fail', sets: [{ weight: '110', reps: 'fail' }, { weight: '110', reps: 'fail' }, { weight: '110', reps: 'fail' }] },
+};
+
+// --- AB CYCLE UTILITIES ---
+const getDaysSince = (dateStr) => {
+  if (!dateStr || typeof dateStr !== 'string') return Infinity;
+  const t = parseWorkoutDate(dateStr);
+  if (!t) return Infinity;
+  const now = new Date();
+  const then = new Date(t);
+  const diff = now.getTime() - then.getTime();
+  return Math.floor(diff / (24 * 60 * 60 * 1000));
+};
+
+const getNextAbType = (lastType) => {
+  if (lastType === 'A') return 'B';
+  if (lastType === 'B') return 'C';
+  if (lastType === 'C') return 'A';
+  return 'A';
+};
+
+const shouldInjectAbWorkout = (lastAbDate) => getDaysSince(lastAbDate) >= 4;
+
+const formatWorkoutForShare = (type, variation, exercises) => {
+  const header = `🦍 Today's Ape Workout: ${type} (${variation})`;
+  const lines = (exercises || []).map((ex) => {
+    const name = ex.exercise || 'Exercise';
+    const setCount = Array.isArray(ex.sets) ? ex.sets.length : 0;
+    const reps = ex.targetReps ?? ex.sets?.[0]?.reps ?? '';
+    const repsLabel = reps ? (String(reps).toLowerCase() === 'fail' ? `${setCount} sets × fail` : `${setCount} sets × ${reps} reps`) : `${setCount} sets`;
+    return `🔸 ${name}\n${repsLabel}`;
+  });
+  return [header, '', ...lines].join('\n');
+};
 
 // --- UTILITIES ---
 const getWeight = (str) => {
@@ -96,7 +136,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -212,6 +252,31 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     };
   }, [todaysType, variation, overrides]);
 
+  const injectedAb = useMemo(() => {
+    if (!shouldInjectAbWorkout(lastAbWorkout?.date)) return null;
+    const nextType = getNextAbType(lastAbWorkout?.type);
+    const template = abTemplates?.[nextType];
+    if (!template) return null;
+    let sets = (template.sets || []).map(s => ({ weight: String(s.weight ?? ''), reps: String(s.reps ?? '').trim() || '' }));
+    if (sets.length === 0) sets = [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }];
+    return {
+      type: nextType,
+      exercise: {
+        exercise: template.exercise,
+        note: template.note ?? '',
+        targetReps: template.targetReps ?? 'fail',
+        sets,
+        _abCycle: nextType,
+      },
+    };
+  }, [abTemplates, lastAbWorkout?.date, lastAbWorkout?.type]);
+
+  const exercisesToShow = useMemo(() => {
+    const base = currentWorkout.exercises || [];
+    if (injectedAb) return [...base, injectedAb.exercise];
+    return base;
+  }, [currentWorkout.exercises, injectedAb]);
+
   const updateSetInput = (exerciseName, setIndex, field, value) => {
     setInputs(prev => ({
       ...prev,
@@ -238,7 +303,39 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         type: currentWorkout.type
       };
     });
-    onFinish(logs, { type: todaysType, variation });
+    let abCompletion = null;
+    const abItem = exercisesToShow.find(it => it._abCycle);
+    if (abItem) {
+      const ex = inputs[abItem.exercise] || {};
+      const setKeys = Object.keys(ex.sets || {}).sort();
+      const sets = setKeys.length
+        ? setKeys.map(idx => {
+            const s = ex.sets[idx];
+            return { weight: String(s?.weight ?? ''), reps: String(s?.reps ?? '').trim() || '' };
+          })
+        : (abItem.sets || []).map(s => ({ weight: String(s?.weight ?? ''), reps: String(s?.reps ?? '').trim() || '' }));
+      abCompletion = {
+        type: abItem._abCycle,
+        template: {
+          exercise: abItem.exercise,
+          note: ex.cues ?? abItem.note ?? '',
+          targetReps: abItem.targetReps ?? 'fail',
+          sets,
+        },
+      };
+      const abLogged = logs.some(l => l.exercise === abItem.exercise || (substitutions[abItem.exercise] && l.exercise === substitutions[abItem.exercise]));
+      if (!abLogged) {
+        const setArray = sets.map(s => `${s.weight || 0}x${s.reps || 0}`);
+        logs.push({
+          date: format(new Date(), 'MM/dd/yy'),
+          exercise: substitutions[abItem.exercise] ?? abItem.exercise,
+          notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : ''),
+          weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
+          type: currentWorkout.type,
+        });
+      }
+    }
+    onFinish(logs, { type: todaysType, variation }, abCompletion);
     setInputs({});
     setSubstitutions({});
     setSubSetCount({});
@@ -288,16 +385,27 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         </View>
         <Text style={styles.sourceDate}>Source: {currentWorkout.date}</Text>
 
-        <TouchableOpacity style={[styles.subBtn, { alignSelf: 'flex-start', marginBottom: 12 }]} onPress={() => {
-          setEditingExercises(currentWorkout.exercises.map(e => {
-            const sets = e.sets?.map(s => ({ weight: s.weight ?? '', reps: String(s.reps ?? '').trim() || '' })) ?? [{ weight: '', reps: '' }];
-            return { ...e, sets, targetReps: e.targetReps ?? '' };
-          }));
-          setNewExerciseName('');
-          setEditModalVisible(true);
-        }}>
-          <Text style={styles.subBtnText}>Edit workout</Text>
-        </TouchableOpacity>
+        <View style={styles.editShareRow}>
+          <TouchableOpacity style={[styles.subBtn, { marginBottom: 12 }]} onPress={() => {
+            setEditingExercises(currentWorkout.exercises.map(e => {
+              const sets = e.sets?.map(s => ({ weight: s.weight ?? '', reps: String(s.reps ?? '').trim() || '' })) ?? [{ weight: '', reps: '' }];
+              return { ...e, sets, targetReps: e.targetReps ?? '' };
+            }));
+            setNewExerciseName('');
+            setEditModalVisible(true);
+          }}>
+            <Text style={styles.subBtnText}>Edit workout</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.subBtn, styles.shareBtn, { marginBottom: 12 }]}
+            onPress={() => {
+              const message = formatWorkoutForShare(todaysType, variation, exercisesToShow);
+              Share.share({ message });
+            }}
+          >
+            <Text style={styles.subBtnText}>Share</Text>
+          </TouchableOpacity>
+        </View>
 
         <Modal
           visible={editModalVisible}
@@ -391,7 +499,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           </View>
         </Modal>
 
-        {currentWorkout.exercises.map((item, exIdx) => {
+        {exercisesToShow.map((item, exIdx) => {
           const displayName = substitutions[item.exercise] ?? item.exercise;
           const isSubbed = !!substitutions[item.exercise];
           return (
@@ -851,21 +959,29 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [suggestedWorkout, setSuggestedWorkout] = useState(null);
   const [overrides, setOverrides] = useState({});
+  const [abTemplates, setAbTemplates] = useState(DEFAULT_AB_TEMPLATES);
+  const [lastAbWorkout, setLastAbWorkout] = useState(null); // { date, type } or null
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const [stored, overridesStored] = await Promise.all([
+      const [stored, overridesStored, abTemplatesStored, lastAbStored] = await Promise.all([
         AsyncStorage.getItem('workout_history'),
         AsyncStorage.getItem(OVERRIDES_KEY),
+        AsyncStorage.getItem(AB_TEMPLATES_KEY),
+        AsyncStorage.getItem(LAST_AB_WORKOUT_KEY),
       ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
       setHistory([...seedData, ...parsedStored]);
       setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
+      setAbTemplates(abTemplatesStored ? { ...DEFAULT_AB_TEMPLATES, ...JSON.parse(abTemplatesStored) } : DEFAULT_AB_TEMPLATES);
+      setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
     } catch (e) {
       setHistory(seedData);
       setOverrides({});
+      setAbTemplates(DEFAULT_AB_TEMPLATES);
+      setLastAbWorkout(null);
     } finally { setLoading(false); }
   };
 
@@ -897,7 +1013,7 @@ export default function App() {
     setNext();
   }, [loading]);
 
-  const onFinish = async (logs, completed) => {
+  const onFinish = async (logs, completed, abCompletion) => {
     const updated = [...history, ...logs];
     setHistory(updated);
     await AsyncStorage.setItem('workout_history', JSON.stringify(updated));
@@ -923,6 +1039,15 @@ export default function App() {
         await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
       }
     }
+    // Ab cycle: update last ab date/type and overwrite that template's baseline with what user logged
+    if (abCompletion && logs.length > 0) {
+      const completionDate = logs[0].date;
+      setLastAbWorkout({ date: completionDate, type: abCompletion.type });
+      await AsyncStorage.setItem(LAST_AB_WORKOUT_KEY, JSON.stringify({ date: completionDate, type: abCompletion.type }));
+      const nextAbTemplates = { ...abTemplates, [abCompletion.type]: { ...abTemplates[abCompletion.type], ...abCompletion.template } };
+      setAbTemplates(nextAbTemplates);
+      await AsyncStorage.setItem(AB_TEMPLATES_KEY, JSON.stringify(nextAbTemplates));
+    }
   };
 
   if (loading) return <View style={[styles.container, {justifyContent:'center'}]}><ActivityIndicator size="large" color="#CCFF00" /></View>;
@@ -934,7 +1059,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} /> : <HistoryScreen history={history} />}</View>
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -997,6 +1122,8 @@ const styles = StyleSheet.create({
   subBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   subBtnActive: { backgroundColor: '#333', borderColor: '#CCFF00' },
   subBtnText: { color: '#CCFF00', fontSize: 11, fontWeight: 'bold' },
+  editShareRow: { flexDirection: 'row', gap: 12, marginBottom: 0, flexWrap: 'wrap' },
+  shareBtn: {},
   addRemoveSetRow: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 4 },
   addRemoveSetBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#333', backgroundColor: '#1a1a1a' },
   addRemoveSetBtnDisabled: { opacity: 0.4 },
