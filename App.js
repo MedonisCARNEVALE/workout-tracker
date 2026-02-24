@@ -284,7 +284,11 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         <Text style={styles.sourceDate}>Source: {currentWorkout.date}</Text>
 
         <TouchableOpacity style={[styles.subBtn, { alignSelf: 'flex-start', marginBottom: 12 }]} onPress={() => {
-          setEditingExercises(currentWorkout.exercises.map(e => ({ ...e, sets: e.sets?.map(s => ({ weight: s.weight ?? '', reps: s.reps ?? '' })) ?? [] })));
+          setEditingExercises(currentWorkout.exercises.map(e => {
+            const sets = e.sets?.map(s => ({ weight: s.weight ?? '', reps: String(s.reps ?? '').trim() || '' })) ?? [{ weight: '', reps: '' }];
+            return { ...e, sets, targetReps: e.targetReps ?? '' };
+          }));
+          setNewExerciseName('');
           setEditModalVisible(true);
         }}>
           <Text style={styles.subBtnText}>Edit workout</Text>
@@ -298,48 +302,87 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Editing {todaysType} {variation}</Text>
-              <Text style={styles.modalSubtitle}>Master template · changes apply to future workouts</Text>
-              <Pressable style={styles.modalCloseBtn} onPress={() => setEditModalVisible(false)}>
-                <Text style={styles.modalCloseText}>Cancel</Text>
-              </Pressable>
-            </View>
-            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalSectionLabel}>Exercises</Text>
-              {editingExercises.map((ex, idx) => (
-                <View key={idx} style={styles.modalExerciseRow}>
-                  <Text style={styles.modalExerciseName} numberOfLines={2}>{ex.exercise}</Text>
-                  <TouchableOpacity style={styles.modalRemoveBtn} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
-                    <Text style={styles.modalRemoveText}>Remove</Text>
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.modalTitle}>Edit {todaysType} {variation} template</Text>
+                <View style={styles.modalHeaderActions}>
+                  <Pressable style={styles.modalCancelBtn} onPress={() => setEditModalVisible(false)}>
+                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  </Pressable>
+                  <TouchableOpacity style={styles.modalSaveHeaderBtn} onPress={() => {
+                    onSaveOverrides?.(todaysType, variation, editingExercises);
+                    setEditModalVisible(false);
+                  }}>
+                    <Text style={styles.modalSaveHeaderBtnText}>Save template</Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+              <Text style={styles.modalSubtitle}>Changes apply to future workouts</Text>
+            </View>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+              <Text style={styles.modalSectionLabel}>Exercises (drag to reorder)</Text>
+              {editingExercises.map((ex, idx) => (
+                <View key={`ex-${idx}-${ex.exercise}`} style={styles.templateExerciseCard}>
+                  <View style={styles.templateExerciseHeader}>
+                    <View style={styles.templateGripRow}>
+                      <Text style={styles.gripIcon}>⋮⋮</Text>
+                      <TouchableOpacity style={styles.moveBtn} onPress={() => idx > 0 && setEditingExercises(prev => { const n = [...prev]; [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; })} disabled={idx === 0}>
+                        <Text style={[styles.moveBtnText, idx === 0 && styles.moveBtnTextDisabled]}>↑</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.moveBtn} onPress={() => idx < editingExercises.length - 1 && setEditingExercises(prev => { const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n; })} disabled={idx === editingExercises.length - 1}>
+                        <Text style={[styles.moveBtnText, idx === editingExercises.length - 1 && styles.moveBtnTextDisabled]}>↓</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.templateExerciseName} numberOfLines={2}>{ex.exercise}</Text>
+                    <TouchableOpacity style={styles.modalRemoveBtn} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
+                      <Text style={styles.modalRemoveText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.templateMetaRow}>
+                    <View style={styles.setsStepperRow}>
+                      <Text style={styles.setsStepperLabel}>Sets</Text>
+                      <TouchableOpacity style={styles.stepperBtn} onPress={() => { if (ex.sets.length <= 1) return; setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: e.sets.slice(0, -1) } : e)); }}>
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.stepperValue}>{ex.sets.length}</Text>
+                      <TouchableOpacity style={styles.stepperBtn} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: [...e.sets, { weight: '', reps: e.targetReps || '' }] } : e))}>
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.targetRepsRow}>
+                      <Text style={styles.targetRepsLabel}>Target reps</Text>
+                      <TextInput
+                        style={styles.targetRepsInput}
+                        placeholder="e.g. 8"
+                        placeholderTextColor="#555"
+                        value={ex.targetReps}
+                        onChangeText={(v) => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: v } : e))}
+                        keyboardType="number-pad"
+                      />
+                    </View>
+                  </View>
+                </View>
               ))}
-              <View style={styles.modalAddRow}>
-                <TextInput
-                  style={styles.modalAddInput}
-                  placeholder="New exercise name"
-                  placeholderTextColor="#666"
-                  value={newExerciseName}
-                  onChangeText={setNewExerciseName}
-                />
-                <TouchableOpacity style={styles.modalAddBtn} onPress={() => {
-                  if (newExerciseName.trim()) {
-                    setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
-                    setNewExerciseName('');
-                  }
-                }}>
-                  <Text style={styles.modalAddBtnText}>+ Add</Text>
-                </TouchableOpacity>
+              <View style={styles.modalAddSection}>
+                <Text style={styles.modalSectionLabel}>Add exercise</Text>
+                <View style={styles.modalAddRow}>
+                  <TextInput
+                    style={styles.modalAddInput}
+                    placeholder="New exercise name"
+                    placeholderTextColor="#666"
+                    value={newExerciseName}
+                    onChangeText={setNewExerciseName}
+                  />
+                  <TouchableOpacity style={styles.modalAddBtn} onPress={() => {
+                    if (newExerciseName.trim()) {
+                      setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
+                      setNewExerciseName('');
+                    }
+                  }}>
+                    <Text style={styles.modalAddBtnText}>+ Add exercise</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={() => {
-                onSaveOverrides?.(todaysType, variation, editingExercises);
-                setEditModalVisible(false);
-              }}>
-                <Text style={styles.modalSaveBtnText}>Save template</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </Modal>
 
@@ -421,7 +464,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                     )}
                     <TextInput 
                       style={[styles.dualInput, isMarty && { flex: 1 }]} 
-                      placeholder="Reps" 
+                      placeholder={item.targetReps ? `Reps (${item.targetReps})` : 'Reps'} 
                       placeholderTextColor="#444" 
                       keyboardType="number-pad"
                       value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
@@ -936,20 +979,40 @@ const styles = StyleSheet.create({
   addRemoveSetText: { color: '#CCFF00', fontSize: 12, fontWeight: 'bold' },
   modalContainer: { flex: 1, backgroundColor: '#000' },
   modalHeader: { paddingTop: 24, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#222' },
-  modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 4 },
-  modalSubtitle: { color: '#666', fontSize: 12, marginBottom: 16 },
-  modalCloseBtn: { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 4 },
-  modalCloseText: { color: '#888', fontSize: 15, fontWeight: '600' },
+  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
+  modalTitle: { color: '#fff', fontSize: 20, fontWeight: '900', flex: 1, minWidth: 0 },
+  modalHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  modalCancelBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  modalCancelBtnText: { color: '#888', fontSize: 16, fontWeight: '600' },
+  modalSaveHeaderBtn: { backgroundColor: '#CCFF00', paddingVertical: 10, paddingHorizontal: 18, borderRadius: 10 },
+  modalSaveHeaderBtnText: { color: '#000', fontSize: 15, fontWeight: '900' },
+  modalSubtitle: { color: '#666', fontSize: 12, marginTop: 6 },
   modalScroll: { flex: 1 },
-  modalScrollContent: { padding: 20, paddingBottom: 24 },
-  modalSectionLabel: { color: '#666', fontSize: 11, fontWeight: 'bold', marginBottom: 12, letterSpacing: 0.5 },
-  modalExerciseRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#222' },
-  modalExerciseName: { color: '#fff', flex: 1, fontSize: 15, fontWeight: '600' },
+  modalScrollContent: { padding: 20, paddingBottom: 40 },
+  modalSectionLabel: { color: '#666', fontSize: 11, fontWeight: 'bold', marginBottom: 10, letterSpacing: 0.5 },
+  templateExerciseCard: { backgroundColor: '#111', borderRadius: 12, borderWidth: 1, borderColor: '#222', marginBottom: 12, padding: 14, overflow: 'hidden' },
+  templateExerciseHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  templateGripRow: { flexDirection: 'row', alignItems: 'center', marginRight: 10, gap: 4 },
+  gripIcon: { color: '#555', fontSize: 16, fontWeight: 'bold', letterSpacing: -2 },
+  moveBtn: { padding: 6, minWidth: 32, alignItems: 'center' },
+  moveBtnText: { color: '#CCFF00', fontSize: 14, fontWeight: 'bold' },
+  moveBtnTextDisabled: { color: '#333' },
+  templateExerciseName: { color: '#fff', flex: 1, fontSize: 16, fontWeight: '600', minWidth: 0 },
   modalRemoveBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#2a1515', borderWidth: 1, borderColor: '#442' },
   modalRemoveText: { color: '#f66', fontSize: 12, fontWeight: 'bold' },
-  modalAddRow: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 8 },
+  templateMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, alignItems: 'center' },
+  setsStepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  setsStepperLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
+  stepperBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
+  stepperBtnText: { color: '#CCFF00', fontSize: 18, fontWeight: 'bold', lineHeight: 20 },
+  stepperValue: { color: '#fff', fontSize: 15, fontWeight: 'bold', minWidth: 24, textAlign: 'center' },
+  targetRepsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  targetRepsLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
+  targetRepsInput: { width: 56, backgroundColor: '#1a1a1a', color: '#fff', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 14, fontWeight: '600' },
+  modalAddSection: { marginTop: 8 },
+  modalAddRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   modalAddInput: { flex: 1, backgroundColor: '#111', color: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#222', fontSize: 15 },
-  modalAddBtn: { paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', justifyContent: 'center' },
+  modalAddBtn: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', justifyContent: 'center' },
   modalAddBtnText: { color: '#CCFF00', fontSize: 14, fontWeight: 'bold' },
   modalFooter: { padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#000' },
   modalSaveBtn: { backgroundColor: '#CCFF00', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
