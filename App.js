@@ -436,7 +436,7 @@ const LIFT_KEYWORDS = [
   {
     key: 'Incline Bench',
     include: ['incline bench', 'incline press', 'incline bb', 'bb incline', 'incline bench bb'],
-    exclude: ['db incline', 'dumbbell incline', 'incline db', 'incline press machine', 'incline machine', 'incline chest machine'],
+    exclude: ['db incline', 'dumbbell incline', 'incline db', 'incline press machine', 'incline machine', 'incline chest machine', 'incline chest press'],
   },
   {
     key: 'BB Row',
@@ -473,7 +473,15 @@ function estimated1RM(weight, reps) {
   return Math.round(weight * (1 + r / 30));
 }
 
-// Parse notes "225x5, 225x4" or "40x8" into best weight and best estimated 1RM for that log.
+// Build a short "225×5, 225×4" summary from log for tooltip.
+function getSetsSummary(log) {
+  const notes = String(log.notes || log.note || '').trim();
+  if (notes) return notes;
+  if (log.sets?.length) return log.sets.map(s => `${s.weight ?? '?'}×${s.reps ?? '?'}`).join(', ');
+  return '';
+}
+
+// Parse notes/sets into best weight and best estimated 1RM for that log (same log only, so 1RM aligns with weight).
 function getBestWeightAnd1RM(log) {
   let bestWeight = getWeightFromLog(log);
   let best1RM = null;
@@ -517,15 +525,14 @@ const ProgressTimeline = ({ history }) => {
       if (!name || !matchesLift(name, match)) return;
       const { weight, est1RM } = getBestWeightAnd1RM(log);
       if (weight <= 0) return;
-      entries.push({ date: log.date, weight, est1RM });
+      const setsSummary = getSetsSummary(log);
+      entries.push({ date: log.date, weight, est1RM, setsSummary });
     });
+    // One point per date: use the log with max weight only; use that same log's est1RM so blue never drops below yellow.
     const byDate = {};
     entries.forEach(e => {
       if (!byDate[e.date] || e.weight > byDate[e.date].weight) {
-        byDate[e.date] = { date: e.date, weight: e.weight, est1RM: byDate[e.date]?.est1RM ?? e.est1RM };
-      }
-      if (e.est1RM != null && (byDate[e.date].est1RM == null || e.est1RM > byDate[e.date].est1RM)) {
-        byDate[e.date].est1RM = e.est1RM;
+        byDate[e.date] = { date: e.date, weight: e.weight, est1RM: e.est1RM, setsSummary: e.setsSummary };
       }
     });
     const dates = Object.keys(byDate).sort((a, b) => parseWorkoutDate(a) - parseWorkoutDate(b)).slice(-30);
@@ -555,17 +562,33 @@ const ProgressTimeline = ({ history }) => {
           <Text style={styles.noDataText}>No data for {selectedLift}. Log weight and reps to see progress and est. 1RM.</Text>
         ) : (
           <>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="date" stroke="#666" tick={{ fontSize: 10 }} />
-                <YAxis stroke="#666" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333', color: '#fff', fontWeight: 'bold', fontSize: 13 }} labelStyle={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }} itemStyle={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }} />
-                <Line type="monotone" dataKey="weight" name="Weight (lb)" stroke="#CCFF00" dot={{ r: 4 }} connectNulls />
-                <Line type="monotone" dataKey="est1RM" name="Est. 1RM (lb)" stroke="#00CCFF" dot={{ r: 3 }} connectNulls strokeDasharray="4 2" />
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={chartData} margin={{ top: 12, right: 12, left: 4, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                <XAxis dataKey="date" stroke="#555" tick={{ fill: '#aaa', fontSize: 11, fontWeight: 'bold' }} axisLine={{ stroke: '#333' }} tickLine={false} />
+                <YAxis stroke="#555" tick={{ fill: '#aaa', fontSize: 11, fontWeight: 'bold' }} axisLine={false} tickLine={false} width={32} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length || !label) return null;
+                    const p = payload[0].payload;
+                    return (
+                      <div style={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: 10, padding: '12px 14px', minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
+                        <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{String(label).toUpperCase()}</div>
+                        <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Weight: {p.weight} lb</div>
+                        {p.est1RM != null && <div style={{ color: '#00CCFF', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Est. 1RM: {p.est1RM} lb</div>}
+                        {p.setsSummary ? <div style={{ color: '#888', fontSize: 12, fontWeight: '600', marginTop: 6, borderTop: '1px solid #222', paddingTop: 6 }}>Sets: {p.setsSummary}</div> : null}
+                      </div>
+                    );
+                  }}
+                />
+                <Line type="monotone" dataKey="weight" stroke="#CCFF00" dot={{ r: 4, fill: '#CCFF00', strokeWidth: 0 }} connectNulls strokeWidth={2} />
+                <Line type="monotone" dataKey="est1RM" stroke="#00CCFF" dot={{ r: 3, fill: '#00CCFF', strokeWidth: 0 }} connectNulls strokeDasharray="5 3" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
-            <Text style={styles.noDataText}>Yellow = top weight · Blue dashed = estimated 1RM (from weight × reps)</Text>
+            <View style={styles.chartLegend}>
+              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#CCFF00' }]} /><Text style={styles.chartLegendText}>Weight</Text></View>
+              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#00CCFF' }]} /><Text style={styles.chartLegendText}>Est. 1RM</Text></View>
+            </View>
           </>
         )}
       </View>
@@ -724,8 +747,12 @@ const styles = StyleSheet.create({
   logLine: { marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#222', paddingBottom: 5 },
   logExercise: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   logNotes: { color: '#888', fontSize: 13, lineHeight: 18 },
-  chartWrapper: { marginBottom: 30, backgroundColor: '#111', padding: 15, borderRadius: 16 },
-  liftPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  chartWrapper: { marginBottom: 30, backgroundColor: '#111', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#1a1a1a' },
+  liftPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
+  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 8 },
+  chartLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  chartLegendDot: { width: 10, height: 10, borderRadius: 5 },
+  chartLegendText: { color: '#888', fontSize: 12, fontWeight: 'bold' },
   pickerBtn: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   pickerText: { color: '#666', fontSize: 9, fontWeight: 'bold' },
   noDataText: { color: '#444', textAlign: 'center', marginVertical: 20, fontSize: 11 },
