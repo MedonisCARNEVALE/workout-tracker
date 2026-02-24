@@ -18637,7 +18637,8 @@
                 "reps": "Dropset"
             }
         ],
-        "note": ""
+        "note": "",
+        "isSupersetWithNext": true
     },
     {
         "date": "1/3/2026",
@@ -27388,7 +27389,8 @@
                 "reps": null
             }
         ],
-        "note": ""
+        "note": "",
+        "isSupersetWithNext": true
     },
     {
         "date": "2/13/2026",

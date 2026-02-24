@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable, Share, Vibration } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +26,126 @@ const stopTimerSpeech = () => {
   } else {
     Speech.stop();
   }
+};
+
+const BAR_WEIGHT = 45;
+const PLATES = [45, 35, 25, 10, 5, 2.5];
+
+const getPlateCombination = (totalLbs) => {
+  const n = parseFloat(String(totalLbs).replace(/[^0-9.]/g, ''), 10);
+  if (isNaN(n) || n < BAR_WEIGHT) return null;
+  if (n === BAR_WEIGHT) return { total: n, plates: [], perSide: 0 };
+  let perSide = (n - BAR_WEIGHT) / 2;
+  perSide = Math.round(perSide / 2.5) * 2.5;
+  if (perSide <= 0) return { total: BAR_WEIGHT, plates: [], perSide: 0 };
+  const result = [];
+  let remaining = perSide;
+  for (const p of PLATES) {
+    while (remaining >= p - 0.01) {
+      result.push(p);
+      remaining -= p;
+    }
+  }
+  const actualTotal = BAR_WEIGHT + result.reduce((a, b) => a + b, 0) * 2;
+  return { total: actualTotal, plates: result, perSide };
+};
+
+const formatPlateAlert = (totalLbs) => {
+  const combo = getPlateCombination(totalLbs);
+  if (!combo) return 'Enter a weight (at least 45 lbs for the bar).';
+  if (combo.plates.length === 0) return `For ${combo.total} lbs: Just the bar — no plates.`;
+  const list = combo.plates.map(p => `[ ${p} ]`).join(' ');
+  return `For ${combo.total} lbs, load ONE side with: ${list}`;
+};
+
+const parseNotesToSets = (notes) => {
+  const part = String(notes || '').split('|')[0].trim();
+  return part.split(',').map(s => s.trim()).filter(Boolean).map(segment => {
+    const [w, r] = segment.split('x').map(x => x.trim());
+    const weight = w === 'BW' || w === '' || !w ? 0 : parseFloat(w) || 0;
+    const reps = parseInt(r, 10) || 0;
+    return { weight, reps };
+  });
+};
+
+const getLastLogForExercise = (history, exerciseName) => {
+  const notesStr = (log) => String(log.notes || log.note || '');
+  const matches = (history || []).filter(
+    (log) =>
+      (log.exercise || '').trim() === (exerciseName || '').trim() &&
+      notesStr(log).includes('x')
+  );
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => {
+    const tA = a.completedAt ? new Date(a.completedAt).getTime() : parseWorkoutDate(a.date);
+    const tB = b.completedAt ? new Date(b.completedAt).getTime() : parseWorkoutDate(b.date);
+    return tB - tA;
+  });
+  return matches[0];
+};
+
+const allSetsMetTarget = (sets, targetReps) => {
+  if (!sets.length) return false;
+  const targetStr = String(targetReps || '').trim().toLowerCase();
+  if (targetStr === 'fail' || targetStr === '') return sets.some(s => s.reps > 0);
+  const targetNum = parseInt(targetReps, 10);
+  if (isNaN(targetNum)) return sets.some(s => s.reps > 0);
+  return sets.every(s => s.reps >= targetNum);
+};
+
+const getMaxWeightByExercise = (history) => {
+  const map = {};
+  (history || []).forEach((log) => {
+    const name = (log.exercise || '').trim();
+    if (!name || !log.notes) return;
+    const sets = parseNotesToSets(log.notes);
+    if (!sets.length) return;
+    const maxInLog = Math.max(...sets.map((s) => s.weight), 0);
+    if (maxInLog <= 0) return;
+    if (map[name] == null || maxInLog > map[name]) map[name] = maxInLog;
+  });
+  return map;
+};
+
+const computeTonnageFromLogs = (logs) => {
+  let total = 0;
+  (logs || []).forEach((log) => {
+    const sets = parseNotesToSets(log.notes);
+    sets.forEach((s) => {
+      const w = s.weight === 'BW' || s.weight === 0 ? 0 : Number(s.weight) || 0;
+      const r = Number(s.reps) || 0;
+      total += w * r;
+    });
+  });
+  return Math.round(total);
+};
+
+const getTonnageComparison = (tonnage) => {
+  if (tonnage < 1000) return "That's the weight of a grand piano. 🎹";
+  if (tonnage < 2000) return "That is the weight of a Smart Car. 🚗";
+  if (tonnage < 5000) return "You just lifted an adult Rhinoceros. 🦏";
+  if (tonnage < 10000) return "You moved an entire African Elephant today. 🐘";
+  if (tonnage < 20000) return "That is the equivalent of an F-16 Fighter Jet. ✈️";
+  if (tonnage < 35000) return "You just casually lifted a School Bus. 🚌";
+  return "🦍 APE MODE: You moved a fully loaded semi truck. Absolute unit.";
+};
+
+const getOverloadNudgeMap = (history, exercises) => {
+  const map = {};
+  (exercises || []).forEach((item) => {
+    const name = item.exercise || '';
+    if (!name) return;
+    const lastLog = getLastLogForExercise(history, name);
+    if (!lastLog || !lastLog.notes) return;
+    const sets = parseNotesToSets(lastLog.notes);
+    if (!sets.length) return;
+    const met = allSetsMetTarget(sets, item.targetReps);
+    if (!met) return;
+    const maxWeight = Math.max(...sets.map(s => s.weight), 0);
+    if (maxWeight <= 0) return;
+    map[name] = { targetWeight: maxWeight + 5 };
+  });
+  return map;
 };
 
 // Order: Push A → Pull A → Legs A → Push B → Pull B → Legs B → Push C → Pull C → Legs KOT
@@ -157,7 +277,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -168,6 +288,8 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercises, setEditingExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
+  const [shoulderWarmupDone, setShoulderWarmupDone] = useState(false);
+  const [injectedWarmups, setInjectedWarmups] = useState({}); // { exerciseName: [ { weight, reps }, ... ] }
   const [restTimerSeconds, setRestTimerSeconds] = useState(null);
   const [isTimerMuted, setIsTimerMuted] = useState(false);
   const restTimerRef = useRef(null);
@@ -351,6 +473,93 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     return base;
   }, [currentWorkout.exercises, injectedAb]);
 
+  const exerciseBlocks = useMemo(() => {
+    const list = exercisesToShow;
+    const blocks = [];
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].isSupersetWithNext && i + 1 < list.length) {
+        blocks.push({ type: 'superset', indices: [i, i + 1] });
+        i++;
+      } else {
+        blocks.push({ type: 'single', indices: [i] });
+      }
+    }
+    return blocks;
+  }, [exercisesToShow]);
+
+  const overloadNudgeMap = useMemo(
+    () => getOverloadNudgeMap(history, exercisesToShow),
+    [history, exercisesToShow]
+  );
+
+  const maxWeightByExercise = useMemo(() => getMaxWeightByExercise(history), [history]);
+  const [prSetKeys, setPrSetKeys] = useState({}); // { 'exerciseName-setIdx': true }
+  const prSetKeysRef = useRef({});
+  useEffect(() => { prSetKeysRef.current = prSetKeys; }, [prSetKeys]);
+
+  const showShoulderCard =
+    todaysType === 'Push' ||
+    (todaysType === 'Legs' && (variation === 'A' || variation === 'B'));
+
+  const getWorkingWeightForExercise = (item) => {
+    const name = item.exercise || '';
+    const exInputs = inputs[name]?.sets || {};
+    const fromInputs = Object.keys(exInputs)
+      .map((idx) => {
+        const w = exInputs[idx]?.weight;
+        if (w === 'BW' || !w) return 0;
+        return parseFloat(String(w).replace(/[^0-9.]/g, ''), 10) || 0;
+      })
+      .filter((n) => n > 0);
+    if (fromInputs.length) return Math.max(...fromInputs);
+    const firstSet = item.sets?.[0];
+    if (firstSet) {
+      const w = firstSet.weight;
+      if (w === 'Bodyweight' || w === 'BW') return 0;
+      const n = parseFloat(String(w).replace(/[^0-9.]/g, ''), 10);
+      if (!isNaN(n) && n > 0) return n;
+    }
+    const nudge = overloadNudgeMap[name];
+    if (nudge?.targetWeight) return nudge.targetWeight;
+    return null;
+  };
+
+  const generateWarmupsForExercise = (item) => {
+    const working = getWorkingWeightForExercise(item);
+    if (working == null || working <= 0) {
+      Alert.alert('Warm-ups', 'Enter a working weight for this exercise first (or use the Last/Target weight shown).');
+      return;
+    }
+    const w1 = Math.round((working * 0.5) / 2.5) * 2.5 || 2.5;
+    const w2 = Math.round((working * 0.7) / 2.5) * 2.5 || 2.5;
+    const w3 = Math.round((working * 0.85) / 2.5) * 2.5 || 2.5;
+    setInjectedWarmups((prev) => ({
+      ...prev,
+      [item.exercise]: [
+        { weight: w1, reps: 8 },
+        { weight: w2, reps: 4 },
+        { weight: w3, reps: 2 },
+      ],
+    }));
+    const exInputs = inputs[item.exercise]?.sets || {};
+    const warmupDefaults = {
+      0: { weight: String(w1), reps: '8' },
+      1: { weight: String(w2), reps: '4' },
+      2: { weight: String(w3), reps: '2' },
+    };
+    const shifted = {};
+    Object.keys(exInputs).forEach((idx) => {
+      shifted[String(Number(idx) + 3)] = exInputs[idx];
+    });
+    setInputs((prev) => ({
+      ...prev,
+      [item.exercise]: {
+        ...prev[item.exercise],
+        sets: { ...warmupDefaults, ...shifted },
+      },
+    }));
+  };
+
   const updateSetInput = (exerciseName, setIndex, field, value) => {
     setInputs(prev => ({
       ...prev,
@@ -419,10 +628,19 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   };
 
   if (showSuccessScreen) {
+    const tonnageFormatted = totalTonnage != null ? totalTonnage.toLocaleString() : '0';
+    const tonnageComparison = totalTonnage != null ? getTonnageComparison(totalTonnage) : '';
     return (
       <View style={[styles.container, styles.successContainer]}>
-        <Text style={styles.successTitle}>Workout complete</Text>
+        <Text style={styles.successTitle}>🦍 Ape Mode Complete</Text>
         <Text style={styles.successMessage}>2026 Log Saved.</Text>
+        {totalTonnage != null && (
+          <View style={styles.successTonnageBlock}>
+            <Text style={styles.successTonnageLabel}>Total Volume</Text>
+            <Text style={styles.successTonnageValue}>{tonnageFormatted} lbs</Text>
+            {tonnageComparison ? <Text style={styles.successTonnageComparison}>{tonnageComparison}</Text> : null}
+          </View>
+        )}
         <TouchableOpacity style={styles.successPrimaryBtn} onPress={onDismissSuccess}>
           <Text style={styles.successPrimaryBtnText}>Done</Text>
         </TouchableOpacity>
@@ -534,46 +752,61 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
               <Text style={styles.modalSectionLabel}>Exercises (drag to reorder)</Text>
               {editingExercises.map((ex, idx) => (
-                <View key={`ex-${idx}-${ex.exercise}`} style={styles.templateExerciseCard}>
-                  <View style={styles.templateExerciseHeader}>
-                    <View style={styles.templateGripRow}>
-                      <Text style={styles.gripIcon}>⋮⋮</Text>
-                      <TouchableOpacity style={styles.moveBtn} onPress={() => idx > 0 && setEditingExercises(prev => { const n = [...prev]; [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; })} disabled={idx === 0}>
-                        <Text style={[styles.moveBtnText, idx === 0 && styles.moveBtnTextDisabled]}>↑</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.moveBtn} onPress={() => idx < editingExercises.length - 1 && setEditingExercises(prev => { const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n; })} disabled={idx === editingExercises.length - 1}>
-                        <Text style={[styles.moveBtnText, idx === editingExercises.length - 1 && styles.moveBtnTextDisabled]}>↓</Text>
+                <Fragment key={`ex-${idx}-${ex.exercise}`}>
+                  <View style={styles.templateExerciseCard}>
+                    <View style={styles.templateExerciseHeader}>
+                      <View style={styles.templateGripRow}>
+                        <Text style={styles.gripIcon}>⋮⋮</Text>
+                        <TouchableOpacity style={styles.moveBtn} onPress={() => idx > 0 && setEditingExercises(prev => { const n = [...prev]; [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; })} disabled={idx === 0}>
+                          <Text style={[styles.moveBtnText, idx === 0 && styles.moveBtnTextDisabled]}>↑</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.moveBtn} onPress={() => idx < editingExercises.length - 1 && setEditingExercises(prev => { const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n; })} disabled={idx === editingExercises.length - 1}>
+                          <Text style={[styles.moveBtnText, idx === editingExercises.length - 1 && styles.moveBtnTextDisabled]}>↓</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.templateExerciseName} numberOfLines={2}>{ex.exercise}</Text>
+                      <TouchableOpacity style={styles.modalRemoveBtn} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
+                        <Text style={styles.modalRemoveText}>Remove</Text>
                       </TouchableOpacity>
                     </View>
-                    <Text style={styles.templateExerciseName} numberOfLines={2}>{ex.exercise}</Text>
-                    <TouchableOpacity style={styles.modalRemoveBtn} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
-                      <Text style={styles.modalRemoveText}>Remove</Text>
-                    </TouchableOpacity>
+                    <View style={styles.templateMetaRow}>
+                      <View style={styles.setsStepperRow}>
+                        <Text style={styles.setsStepperLabel}>Sets</Text>
+                        <TouchableOpacity style={styles.stepperBtn} onPress={() => { if (ex.sets.length <= 1) return; setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: e.sets.slice(0, -1) } : e)); }}>
+                          <Text style={styles.stepperBtnText}>−</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.stepperValue}>{ex.sets.length}</Text>
+                        <TouchableOpacity style={styles.stepperBtn} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: [...e.sets, { weight: '', reps: e.targetReps || '' }] } : e))}>
+                          <Text style={styles.stepperBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.targetRepsRow}>
+                        <Text style={styles.targetRepsLabel}>Target reps</Text>
+                        <TextInput
+                          style={styles.targetRepsInput}
+                          placeholder="e.g. 8"
+                          placeholderTextColor="#A0A0A0"
+                          value={ex.targetReps}
+                          onChangeText={(v) => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: v } : e))}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.templateMetaRow}>
-                    <View style={styles.setsStepperRow}>
-                      <Text style={styles.setsStepperLabel}>Sets</Text>
-                      <TouchableOpacity style={styles.stepperBtn} onPress={() => { if (ex.sets.length <= 1) return; setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: e.sets.slice(0, -1) } : e)); }}>
-                        <Text style={styles.stepperBtnText}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.stepperValue}>{ex.sets.length}</Text>
-                      <TouchableOpacity style={styles.stepperBtn} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: [...e.sets, { weight: '', reps: e.targetReps || '' }] } : e))}>
-                        <Text style={styles.stepperBtnText}>+</Text>
+                  {idx < editingExercises.length - 1 && (
+                    <View style={styles.supersetLinkRow}>
+                      <TouchableOpacity
+                        onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, isSupersetWithNext: !e.isSupersetWithNext } : e))}
+                        style={[styles.supersetLinkBtn, ex.isSupersetWithNext && styles.supersetLinkBtnActive]}
+                      >
+                        <Ionicons name={ex.isSupersetWithNext ? 'link' : 'link-outline'} size={22} color={ex.isSupersetWithNext ? THEME.accent : '#888'} />
+                        <Text style={[styles.supersetLinkText, ex.isSupersetWithNext && styles.supersetLinkTextActive]}>
+                          {ex.isSupersetWithNext ? 'Linked (superset)' : 'Link with next'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
-                    <View style={styles.targetRepsRow}>
-                      <Text style={styles.targetRepsLabel}>Target reps</Text>
-                      <TextInput
-                        style={styles.targetRepsInput}
-                        placeholder="e.g. 8"
-                        placeholderTextColor="#A0A0A0"
-                        value={ex.targetReps}
-                        onChangeText={(v) => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: v } : e))}
-                        keyboardType="number-pad"
-                      />
-                    </View>
-                  </View>
-                </View>
+                  )}
+                </Fragment>
               ))}
               <View style={styles.modalAddSection}>
                 <Text style={styles.modalSectionLabel}>Add exercise</Text>
@@ -587,7 +820,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   />
                   <TouchableOpacity style={styles.modalAddBtn} onPress={() => {
                     if (newExerciseName.trim()) {
-                      setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
+                      setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }], isSupersetWithNext: false }]);
                       setNewExerciseName('');
                     }
                   }}>
@@ -599,13 +832,42 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           </View>
         </Modal>
 
-        {exercisesToShow.map((item, exIdx) => {
+        {showShoulderCard && !shoulderWarmupDone && (
+          <View style={styles.shoulderCard}>
+            <Text style={styles.shoulderCardText}>🔥 Shoulder Warmup Reminder</Text>
+            <TouchableOpacity
+              style={styles.shoulderCardDoneBtn}
+              onPress={() => setShoulderWarmupDone(true)}
+            >
+              <Ionicons name="checkmark-circle" size={24} color={THEME.accent} />
+              <Text style={styles.shoulderCardDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {exerciseBlocks.map((block) => {
+          const isSuperset = block.indices.length === 2;
+          return (
+          <View key={isSuperset ? `ss-${block.indices[0]}` : `ex-${block.indices[0]}`} style={isSuperset ? styles.supersetGroup : undefined}>
+            {isSuperset && <Text style={styles.supersetTag}>SUPERSET</Text>}
+            {block.indices.map((exIdx) => {
+          const item = exercisesToShow[exIdx];
           const displayName = substitutions[item.exercise] ?? item.exercise;
           const isSubbed = !!substitutions[item.exercise];
+          const warmUpCount = (injectedWarmups[item.exercise] || []).length;
+          const workingSetCount = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
+          const effectiveSetIndices = Array.from({ length: warmUpCount + workingSetCount }, (_, i) => i);
+          const isFirstExercise = exIdx === 0;
+          const canGenerateWarmups = isFirstExercise && item.exercise !== 'Marty St Louis' && !injectedWarmups[item.exercise];
           return (
-          <View key={`ex-card-${exIdx}`} style={styles.exCard}>
+          <View key={`ex-card-${exIdx}`} style={[styles.exCard, isSuperset && styles.exCardInSuperset]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <Text style={[styles.exName, { flex: 1 }]} numberOfLines={2}>{displayName}{isSubbed ? ` (sub: ${item.exercise})` : ''}</Text>
+              {canGenerateWarmups && (
+                <TouchableOpacity style={styles.generateWarmupsBtn} onPress={() => generateWarmupsForExercise(item)}>
+                  <Text style={styles.generateWarmupsBtnText}>Generate Warm-ups</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={[styles.subBtn, isSubbed && styles.subBtnActive]}
                 onPress={() => {
@@ -646,12 +908,15 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
               </View>
             )}
             {item.note && !isSubbed ? <Text style={styles.prevNote}>“{item.note}”</Text> : null}
-            {(isSubbed ? Array.from({ length: subSetCount[item.exercise] ?? 1 }, (_, i) => i) : item.sets.map((_, i) => i)).map((setIdx) => {
+            {effectiveSetIndices.map((setIdx) => {
+              const isWarmup = setIdx < warmUpCount;
               const isMarty = item.exercise === 'Marty St Louis';
               const isBWChecked = inputs[item.exercise]?.sets?.[setIdx]?.weight === 'BW';
-              const prevSet = !isSubbed && item.sets[setIdx] ? item.sets[setIdx] : null;
-              const setIndices = isSubbed ? Array.from({ length: subSetCount[item.exercise] ?? 1 }, (_, i) => i) : item.sets.map((_, i) => i);
-              const activeSetIndex = setIndices.find((i) => {
+              const prevSet = isWarmup
+                ? injectedWarmups[item.exercise][setIdx]
+                : (!isSubbed && (item.sets || [])[setIdx - warmUpCount] ? (item.sets || [])[setIdx - warmUpCount] : null);
+              const setLabel = isWarmup ? `W${setIdx + 1}` : `SET ${setIdx - warmUpCount + 1}`;
+              const activeSetIndex = effectiveSetIndices.find((i) => {
                 const w = inputs[item.exercise]?.sets?.[i]?.weight;
                 const r = inputs[item.exercise]?.sets?.[i]?.reps;
                 const hasWeight = w != null && String(w).trim() !== '';
@@ -659,18 +924,26 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 return !hasWeight || !hasReps;
               });
               const isActiveSet = activeSetIndex === setIdx;
+              const isPrSet = !!prSetKeys[`${item.exercise}-${setIdx}`];
 
               return (
-                <View key={`set-row-${exIdx}-${setIdx}`} style={[styles.setRowContainer, isActiveSet && styles.activeSetRow]}>
+                <View key={`set-row-${exIdx}-${setIdx}`} style={[styles.setRowContainer, isActiveSet && styles.activeSetRow, isWarmup && styles.warmupSetRow, isPrSet && styles.prSetRow]}>
                   <View style={styles.setLabelRow}>
-                    <Text style={styles.setNumber}>SET {setIdx + 1}</Text>
-                    <Text style={styles.lastStats}>{prevSet ? `Last: ${prevSet.weight || 'BW'} × ${prevSet.reps}` : '—'}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.setNumber, isWarmup && styles.warmupSetLabel]}>{setLabel}</Text>
+                      {isPrSet && <Text style={styles.prBadge}>👑 NEW PR</Text>}
+                    </View>
+                    {!isWarmup && overloadNudgeMap[item.exercise] ? (
+                      <Text style={styles.lastStatsOverload}>Target: {overloadNudgeMap[item.exercise].targetWeight} lbs 📈</Text>
+                    ) : (
+                      <Text style={styles.lastStats}>{prevSet ? `Last: ${prevSet.weight || 'BW'} × ${prevSet.reps}` : '—'}</Text>
+                    )}
                   </View>
                   <View style={styles.inputGroup}>
                     {!isMarty && (
-                      <View style={{ flex: 1, position: 'relative' }}>
+                      <View style={{ flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: showBWButton(item.exercise) ? 44 : 0 }}>
                         <TextInput 
-                          style={styles.dualInput} 
+                          style={[styles.dualInput, { flex: 1 }]} 
                           placeholder="Lbs" 
                           placeholderTextColor="#A0A0A0" 
                           keyboardType="number-pad"
@@ -678,6 +951,12 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
                           onFocus={cancelRestTimer}
                         />
+                        <TouchableOpacity
+                          style={styles.plateCalcBtn}
+                          onPress={() => Alert.alert('Plate calculator', formatPlateAlert(inputs[item.exercise]?.sets?.[setIdx]?.weight || ''))}
+                        >
+                          <Ionicons name="barbell" size={18} color="#888" />
+                        </TouchableOpacity>
                         {showBWButton(item.exercise) && (
                           <TouchableOpacity style={[styles.bwBadge, isBWChecked && styles.bwBadgeActive]} onPress={() => updateSetInput(item.exercise, setIdx, 'weight', isBWChecked ? '' : 'BW')}>
                             <Text style={[styles.bwBadgeText, isBWChecked && styles.bwBadgeTextActive]}>BW</Text>
@@ -700,7 +979,14 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           const r = inp[item.exercise]?.sets?.[setIdx]?.reps;
                           const hasWeight = w != null && String(w).trim() !== '';
                           const hasReps = r != null && String(r).trim() !== '';
-                          if (hasWeight && hasReps) startRestTimer();
+                          if (hasWeight && hasReps && !item.isSupersetWithNext) startRestTimer();
+                          const weightNum = w === 'BW' || !w ? 0 : parseFloat(String(w).replace(/[^0-9.]/g, ''), 10) || 0;
+                          const allTimeMax = maxWeightByExercise[item.exercise] ?? 0;
+                          const prKey = `${item.exercise}-${setIdx}`;
+                          if (weightNum > 0 && weightNum >= allTimeMax && !prSetKeysRef.current[prKey]) {
+                            setPrSetKeys((prev) => ({ ...prev, [prKey]: true }));
+                            if (Platform.OS !== 'web') Vibration.vibrate([0, 100, 50, 100]);
+                          }
                         }, 50);
                       }}
                     />
@@ -751,6 +1037,9 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 }))
               }
             />
+          </View>
+          );
+            })}
           </View>
           );
         })}
@@ -1131,6 +1420,7 @@ export default function App() {
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [lastCompletedAt, setLastCompletedAt] = useState(null);
   const [lastCompletedWorkout, setLastCompletedWorkout] = useState(null);
+  const [totalTonnage, setTotalTonnage] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -1188,6 +1478,7 @@ export default function App() {
     setHistory(updated);
     await AsyncStorage.setItem('workout_history', JSON.stringify(updated));
     if (completed) {
+      setTotalTonnage(computeTonnageFromLogs(logs));
       await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
       const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
       const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
@@ -1232,6 +1523,7 @@ export default function App() {
     setSuggestedWorkout(lastCompletedWorkout);
     setLastCompletedAt(null);
     setLastCompletedWorkout(null);
+    setTotalTonnage(null);
     setShowSuccessScreen(false);
     if (overrides[lastCompletedWorkout.type]?.[lastCompletedWorkout.variation]) {
       const next = { ...overrides };
@@ -1254,7 +1546,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} /> : <HistoryScreen history={history} />}</View>
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -1268,7 +1560,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   successContainer: { justifyContent: 'center', alignItems: 'center', padding: 24 },
   successTitle: { color: '#fff', fontSize: 28, fontWeight: '900', marginBottom: 8 },
-  successMessage: { color: THEME.dim, fontSize: 16, marginBottom: 32 },
+  successMessage: { color: THEME.dim, fontSize: 16, marginBottom: 16 },
+  successTonnageBlock: { backgroundColor: '#111', paddingVertical: 16, paddingHorizontal: 20, borderRadius: 12, marginBottom: 24, borderWidth: 1, borderColor: '#222', alignItems: 'center' },
+  successTonnageLabel: { color: '#888', fontSize: 12, fontWeight: 'bold', marginBottom: 4, letterSpacing: 0.5 },
+  successTonnageValue: { color: THEME.accent, fontSize: 26, fontWeight: '900', marginBottom: 8 },
+  successTonnageComparison: { color: '#ccc', fontSize: 14, textAlign: 'center', fontStyle: 'italic', paddingHorizontal: 8 },
   successPrimaryBtn: { backgroundColor: THEME.accent, paddingVertical: 16, paddingHorizontal: 48, borderRadius: 12, marginBottom: 16, minWidth: 200, alignItems: 'center' },
   successPrimaryBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
   successSecondaryBtn: { paddingVertical: 16, paddingHorizontal: 24, borderRadius: 12, borderWidth: 2, borderColor: THEME.accent, minWidth: 200, alignItems: 'center' },
@@ -1282,17 +1578,32 @@ const styles = StyleSheet.create({
   cycleLabel: { color: '#666', fontSize: 10, fontWeight: 'bold' },
   cycleValue: { color: '#CCFF00', fontSize: 24, fontWeight: '900' },
   sourceDate: { color: '#444', fontSize: 12, marginBottom: 20, fontWeight: '600' },
+  shoulderCard: { backgroundColor: '#1a1a2e', padding: 14, borderRadius: 12, marginBottom: 14, borderLeftWidth: 4, borderLeftColor: '#f59e0b', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  shoulderCardText: { color: '#fff', fontSize: 16, fontWeight: 'bold', flex: 1 },
+  shoulderCardDoneBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12 },
+  shoulderCardDoneText: { color: THEME.accent, fontSize: 14, fontWeight: 'bold' },
+  generateWarmupsBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', marginRight: 8 },
+  generateWarmupsBtnText: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
   exCard: { backgroundColor: '#1E1E1E', padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#333' },
+  exCardInSuperset: { marginBottom: 0, borderLeftWidth: 0 },
+  supersetGroup: { marginBottom: 15, borderLeftWidth: 6, borderLeftColor: THEME.accent, borderRadius: 12, overflow: 'hidden' },
+  supersetTag: { color: THEME.accent, fontSize: 10, fontWeight: 'bold', letterSpacing: 1, marginBottom: 6, marginLeft: 15, marginTop: 10 },
   exName: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
   prevNote: { color: '#CCFF00', fontSize: 13, fontStyle: 'italic', marginBottom: 15, opacity: 0.8 },
   noteInput: { marginTop: 8, backgroundColor: '#242424', color: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, minHeight: 40, textAlignVertical: 'top' },
   setRowContainer: { marginBottom: 15 },
   activeSetRow: { borderWidth: 2, borderColor: THEME.accent, borderRadius: 8, padding: 8, backgroundColor: 'rgba(204, 255, 0, 0.06)' },
+  warmupSetRow: { borderLeftWidth: 3, borderLeftColor: '#666', backgroundColor: 'rgba(100, 100, 100, 0.08)', padding: 8, borderRadius: 6 },
+  warmupSetLabel: { color: '#888', fontSize: 10 },
+  prSetRow: { borderWidth: 2, borderColor: '#FFD700', borderRadius: 8, padding: 8, backgroundColor: 'rgba(255, 215, 0, 0.06)' },
+  prBadge: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
   setLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
   setNumber: { color: '#666', fontSize: 10, fontWeight: 'bold' },
   lastStats: { color: '#999', fontSize: 11, fontWeight: 'bold' },
+  lastStatsOverload: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
   inputGroup: { flexDirection: 'row', gap: 10 },
   dualInput: { flex: 1, backgroundColor: '#242424', color: '#fff', padding: 12, borderRadius: 8, textAlign: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#333', fontSize: 16 },
+  plateCalcBtn: { padding: 8, justifyContent: 'center', alignItems: 'center' },
   bwBadge: { position: 'absolute', right: 8, top: 10, backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: '#333' },
   bwBadgeText: { color: '#CCFF00', fontSize: 10, fontWeight: '900' },
   bwBadgeActive: { backgroundColor: '#CCFF00', borderColor: '#CCFF00' },
@@ -1355,6 +1666,11 @@ const styles = StyleSheet.create({
   modalScrollContent: { padding: 20, paddingBottom: 40 },
   modalSectionLabel: { color: '#666', fontSize: 11, fontWeight: 'bold', marginBottom: 10, letterSpacing: 0.5 },
   templateExerciseCard: { backgroundColor: '#111', borderRadius: 12, borderWidth: 1, borderColor: '#222', marginBottom: 12, padding: 14, overflow: 'hidden' },
+  supersetLinkRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 12, marginTop: -4 },
+  supersetLinkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#1a1a1a' },
+  supersetLinkBtnActive: { backgroundColor: 'rgba(204, 255, 0, 0.12)' },
+  supersetLinkText: { color: '#888', fontSize: 13 },
+  supersetLinkTextActive: { color: THEME.accent },
   templateExerciseHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   templateGripRow: { flexDirection: 'row', alignItems: 'center', marginRight: 10, gap: 4 },
   gripIcon: { color: '#555', fontSize: 16, fontWeight: 'bold', letterSpacing: -2 },
