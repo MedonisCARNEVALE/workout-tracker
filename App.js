@@ -662,13 +662,33 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const getExerciseSetSummary = (item, isSubbed) => {
     const workingSets = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
     if (workingSets === 0) return '';
-    const hasDrop = isSubbed ? (inputs[item.exercise]?.sets && Object.values(inputs[item.exercise].sets).some(s => s?.modifier === 'drop')) : (item.sets || []).some(s => s?.modifier === 'drop');
-    const hasNeg = isSubbed ? (inputs[item.exercise]?.sets && Object.values(inputs[item.exercise].sets).some(s => s?.modifier === 'negative')) : (item.sets || []).some(s => s?.modifier === 'negative');
+
+    let normalCount = 0;
+    let dropCount = 0;
+    let negCount = 0;
+    if (isSubbed) {
+      const sets = inputs[item.exercise]?.sets || {};
+      for (let i = 0; i < workingSets; i++) {
+        const mod = sets[i]?.modifier ?? null;
+        if (mod === 'drop') dropCount++;
+        else if (mod === 'negative') negCount++;
+        else normalCount++;
+      }
+    } else {
+      (item.sets || []).forEach((s) => {
+        const mod = s?.modifier ?? null;
+        if (mod === 'drop') dropCount++;
+        else if (mod === 'negative') negCount++;
+        else normalCount++;
+      });
+    }
+
     const parts = [];
-    if (hasDrop) parts.push('Drop');
-    if (hasNeg) parts.push('Neg');
-    const suffix = parts.length ? ` (+${parts.join(', +')})` : '';
-    return ` - ${workingSets} set${workingSets !== 1 ? 's' : ''}${suffix}`;
+    if (normalCount > 0) parts.push(`${normalCount} set${normalCount !== 1 ? 's' : ''}`);
+    if (dropCount > 0) parts.push(`${dropCount} drop${dropCount !== 1 ? 's' : ''}`);
+    if (negCount > 0) parts.push(`${negCount} neg${negCount !== 1 ? 's' : ''}`);
+    if (parts.length === 0) return '';
+    return ` - ${parts.join(' + ')}`;
   };
 
   const save = (abs) => {
@@ -1071,7 +1091,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 <View key={`set-row-${exIdx}-${setIdx}`} style={[styles.setRowContainer, isActiveSet && styles.activeSetRow, isWarmup && styles.warmupSetRow, isPrSet && styles.prSetRow]}>
                   <View style={styles.setLabelRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[styles.setNumber, isWarmup && styles.warmupSetLabel]}>{setLabel}</Text>
+                      <Text style={[styles.setNumber, isWarmup && styles.warmupSetLabel, isActiveSet && styles.setNumberActive]}>{setLabel}</Text>
                       {!isWarmup && (
                         <TouchableOpacity
                           style={[styles.modifierChip, setModifier === 'drop' && styles.modifierChipDrop, setModifier === 'negative' && styles.modifierChipNegative]}
@@ -1095,18 +1115,20 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   </View>
                   <View style={styles.inputGroup}>
                     {isSpecialSet ? (
-                      <TouchableOpacity
-                        style={[styles.specialSetBtn, specialSetDone && styles.specialSetBtnDone]}
-                        onPress={() => {
-                          if (specialSetDone) return;
-                          updateSetInput(item.exercise, setIdx, 'reps', '✓');
-                          updateSetInput(item.exercise, setIdx, 'weight', '');
-                          if (!item.isSupersetWithNext) startRestTimer();
-                        }}
-                        disabled={specialSetDone}
-                      >
-                        <Text style={styles.specialSetBtnText}>{specialSetDone ? 'Done' : setModifier === 'drop' ? '✅ Complete Dropset' : '✅ Complete Negative'}</Text>
-                      </TouchableOpacity>
+                      <View style={styles.specialSetBtnWrapper}>
+                        <TouchableOpacity
+                          style={[styles.specialSetBtn, specialSetDone && styles.specialSetBtnDone]}
+                          onPress={() => {
+                            if (specialSetDone) return;
+                            updateSetInput(item.exercise, setIdx, 'reps', '✓');
+                            updateSetInput(item.exercise, setIdx, 'weight', '');
+                            if (!item.isSupersetWithNext) startRestTimer();
+                          }}
+                          disabled={specialSetDone}
+                        >
+                          <Text style={styles.specialSetBtnText}>{specialSetDone ? 'Done' : setModifier === 'drop' ? '✅ Complete Dropset' : '✅ Complete Negative'}</Text>
+                        </TouchableOpacity>
+                      </View>
                     ) : (
                       <>
                     {!isMarty && (
@@ -1772,16 +1794,18 @@ const styles = StyleSheet.create({
   modifierChipNegative: { backgroundColor: 'rgba(204, 255, 0, 0.2)' },
   modifierChipText: { color: '#888', fontSize: 12 },
   modifierChipTextActive: { color: THEME.accent },
-  specialSetBtn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: THEME.accent, alignSelf: 'stretch' },
+  specialSetBtn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, borderWidth: 2, borderColor: THEME.accent, flex: 1, justifyContent: 'center', alignItems: 'center' },
+  specialSetBtnWrapper: { flex: 1, alignSelf: 'stretch' },
   specialSetBtnDone: { opacity: 0.7, borderColor: '#444' },
   specialSetBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
-  activeSetRow: { borderWidth: 2, borderColor: THEME.accent, borderRadius: 8, padding: 8, backgroundColor: 'rgba(204, 255, 0, 0.06)' },
+  activeSetRow: { backgroundColor: 'rgba(204, 255, 0, 0.05)', borderRadius: 8, padding: 8 },
   warmupSetRow: { borderLeftWidth: 3, borderLeftColor: '#666', backgroundColor: 'rgba(100, 100, 100, 0.08)', padding: 8, borderRadius: 6 },
   warmupSetLabel: { color: '#888', fontSize: 10 },
   prSetRow: { borderWidth: 2, borderColor: '#FFD700', borderRadius: 8, padding: 8, backgroundColor: 'rgba(255, 215, 0, 0.06)' },
   prBadge: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
   setLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   setNumber: { color: '#666', fontSize: 10, fontWeight: 'bold' },
+  setNumberActive: { color: THEME.accent },
   lastStats: { color: '#999', fontSize: 11, fontWeight: 'bold' },
   lastStatsOverload: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
   inputGroup: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch', gap: 10 },
