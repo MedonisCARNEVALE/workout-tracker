@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Keyboard, Animated, Easing, Modal, Pressable, Share, Vibration } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
@@ -300,10 +300,16 @@ function searchMatchesLog(search, log) {
 /**
  * From workout history, get up to `count` session dates that each have a *different*
  * set of exercises (so A/B/C or A/B are distinct templates). Dates sorted newest first.
+ * Cached by (typeKey, count) to avoid recomputing when seed_data is large.
  */
+const _distinctDatesCache = new Map();
+const CACHE_MAX = 20;
 const getDistinctSessionDates = (data, typeKey, count) => {
+  const key = `${(typeKey || '').toLowerCase()}|${count}`;
+  const cached = _distinctDatesCache.get(key);
+  if (cached) return cached;
   const filtered = data.filter(
-    (d) => d.type && d.type.toLowerCase().includes(typeKey.toLowerCase())
+    (d) => d.type && d.type.toLowerCase().includes((typeKey || '').toLowerCase())
   );
   const byDate = {};
   filtered.forEach((d) => {
@@ -326,11 +332,16 @@ const getDistinctSessionDates = (data, typeKey, count) => {
     result.push(date);
     if (result.length >= count) break;
   }
+  if (_distinctDatesCache.size >= CACHE_MAX) {
+    const first = _distinctDatesCache.keys().next().value;
+    _distinctDatesCache.delete(first);
+  }
+  _distinctDatesCache.set(key, result);
   return result;
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer, initialInProgress }) => {
+const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer, initialInProgress }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -902,7 +913,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
             <Text style={styles.subBtnText}>Edit workout</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.subBtn, styles.shareBtn, { marginBottom: 12 }]}
+            style={[styles.subBtn, { marginBottom: 12 }]}
             onPress={() => {
               const message = formatWorkoutForShare(todaysType, variation, exercisesToShow, inputs, injectedWarmups, substitutions, subSetCount);
               Share.share({ message });
@@ -1325,6 +1336,8 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   );
 };
 
+const TodayScreen = React.memo(TodayScreenInner);
+
 // Each lift: include = phrases that count (typo-friendly); exclude = variations that must NOT count.
 // Tuned from workout_history.csv so DB/BB and variations don’t mix (e.g. DB curls vs BB curls, bench vs incline).
 const LIFT_KEYWORDS = [
@@ -1602,7 +1615,7 @@ const ProgressTimeline = ({ history }) => {
   }
 };
 
-const HistoryScreen = ({ history }) => {
+const HistoryScreenInner = ({ history }) => {
   const [search, setSearch] = useState('');
   const sessions = useMemo(() => {
     const filtered = history.filter(h => h.date && searchMatchesLog(search, h));
@@ -1649,6 +1662,8 @@ const HistoryScreen = ({ history }) => {
   );
 };
 
+const HistoryScreen = React.memo(HistoryScreenInner);
+
 export default function App() {
   const [tab, setTab] = useState('Today');
   const [history, setHistory] = useState([]);
@@ -1668,6 +1683,8 @@ export default function App() {
   const restTimerRef = useRef(null);
   const restTimerIntervalRef = useRef(null);
   const isTimerMutedRef = useRef(false);
+  const tabRef = useRef(tab);
+  useEffect(() => { tabRef.current = tab; }, [tab]);
 
   const TAB_BAR_HEIGHT = 52;
 
@@ -1675,6 +1692,7 @@ export default function App() {
 
   const keyboardEasingRef = useRef(Easing.bezier(0.25, 0.1, 0.25, 1));
   useEffect(() => {
+    if (typeof Keyboard === 'undefined' || typeof Keyboard.addListener !== 'function') return;
     const easing = keyboardEasingRef.current;
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
       const h = e.endCoordinates?.height ?? 0;
@@ -1690,7 +1708,7 @@ export default function App() {
 
   useEffect(() => { isTimerMutedRef.current = isTimerMuted; }, [isTimerMuted]);
 
-  const cancelRestTimer = () => {
+  const cancelRestTimer = useCallback(() => {
     if (restTimerIntervalRef.current) {
       clearInterval(restTimerIntervalRef.current);
       restTimerIntervalRef.current = null;
@@ -1698,9 +1716,9 @@ export default function App() {
     stopTimerSpeech();
     restTimerRef.current = null;
     setRestTimerSeconds(null);
-  };
+  }, []);
 
-  const startRestTimer = () => {
+  const startRestTimer = useCallback(() => {
     if (restTimerIntervalRef.current) {
       clearInterval(restTimerIntervalRef.current);
       restTimerIntervalRef.current = null;
@@ -1725,9 +1743,9 @@ export default function App() {
         setRestTimerSeconds(null);
         return;
       }
-      setRestTimerSeconds(s);
+      if (tabRef.current === 'Today') setRestTimerSeconds(s);
     }, 1000);
-  };
+  }, []);
 
   useEffect(() => {
     return () => { if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current); };
@@ -1863,6 +1881,9 @@ export default function App() {
     }
   };
 
+  const onDismissSuccess = useCallback(() => setShowSuccessScreen(false), []);
+  const onStartTwoADay = useCallback(() => setShowSuccessScreen(false), []);
+
   if (loading) return <View style={[styles.container, {justifyContent:'center'}]}><ActivityIndicator size="large" color="#CCFF00" /></View>;
 
   return (
@@ -1872,7 +1893,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} initialInProgress={inProgressSnapshot} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={onDismissSuccess} onStartTwoADay={onStartTwoADay} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} initialInProgress={inProgressSnapshot} /> : <HistoryScreen history={history} />}</View>
         {tab === 'Today' && (restTimerSeconds != null || (todayProgress != null && todayProgress.completed >= 1)) ? (
           <Animated.View style={[styles.stickyBottomWrap, { bottom: stickyBottomAnim }]}>
             {restTimerSeconds != null ? (
@@ -1945,7 +1966,6 @@ const styles = StyleSheet.create({
   successUndoBtnText: { color: THEME.dim, fontSize: 14 },
   scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
-  progressBarContainer: { marginBottom: 16 },
   progressBarStickyWrap: { backgroundColor: '#000', paddingVertical: 8, paddingHorizontal: 20 },
   progressBarStickyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressBarStickyText: { color: '#666', fontSize: 11, fontWeight: '600', minWidth: 72 },
@@ -2045,7 +2065,6 @@ const styles = StyleSheet.create({
   subBtnActive: { backgroundColor: '#333', borderColor: '#CCFF00' },
   subBtnText: { color: '#CCFF00', fontSize: 11, fontWeight: 'bold' },
   editShareRow: { flexDirection: 'row', gap: 12, marginBottom: 0, flexWrap: 'wrap' },
-  shareBtn: {},
   addRemoveSetRow: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 4 },
   addRemoveSetBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#333', backgroundColor: '#1a1a1a' },
   addRemoveSetBtnDisabled: { opacity: 0.4 },
