@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from 'react-native';
-import { format } from 'date-fns';
+import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import seedData from './seed_data.json'; 
 
@@ -590,8 +590,40 @@ const ProgressTimeline = ({ history }) => {
       const oneYearAgo = Date.now() - 365.25 * 24 * 60 * 60 * 1000;
       dates = dates.filter(d => parseWorkoutDate(d) >= oneYearAgo);
     }
-    return dates.map(d => byDate[d]).filter(Boolean);
+    return dates.map(d => {
+      const row = byDate[d];
+      return row ? { ...row, timestamp: parseWorkoutDate(d) } : null;
+    }).filter(Boolean);
   }, [history, selectedLift, chartRange]);
+
+  const { timeDomain, xTicks } = useMemo(() => {
+    if (!chartData.length) return { timeDomain: [0, 1], xTicks: [] };
+    const minT = chartData[0].timestamp;
+    const maxT = chartData[chartData.length - 1].timestamp;
+    const minD = new Date(minT);
+    const maxD = new Date(maxT);
+    const padding = (maxT - minT) * 0.02 || 86400000 * 7;
+    const domain = [minT - padding, maxT + padding];
+    let ticks = [];
+    if (chartRange === '1Y') {
+      let d = startOfMonth(minD);
+      const end = addMonths(startOfMonth(maxD), 1);
+      while (d.getTime() <= end.getTime()) {
+        if (d.getTime() >= minT && d.getTime() <= maxT) ticks.push(d.getTime());
+        d = addMonths(d, 1);
+      }
+      while (ticks.length > 7) ticks = ticks.filter((_, i) => i % 2 === 0);
+    } else {
+      let d = startOfYear(minD);
+      const end = addYears(startOfYear(maxD), 1);
+      while (d.getTime() <= end.getTime()) {
+        if (d.getTime() >= minT && d.getTime() <= maxT) ticks.push(d.getTime());
+        d = addYears(d, 1);
+      }
+      while (ticks.length > 7) ticks = ticks.filter((_, i) => i % 2 === 0);
+    }
+    return { timeDomain: domain, xTicks: ticks };
+  }, [chartData, chartRange]);
 
   if (Platform.OS !== 'web') {
     return <View style={styles.chartSection}><Text style={styles.noDataText}>Weight-over-time chart is on the web version.</Text></View>;
@@ -621,29 +653,37 @@ const ProgressTimeline = ({ history }) => {
           <>
             <View style={styles.chartEdgeToEdge}>
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={chartData} margin={{ top: 16, right: 16, left: 16, bottom: 4 }}>
+                <LineChart
+                  data={chartData}
+                  margin={{ top: 16, right: 28, left: 28, bottom: 28 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
                   <XAxis
-                    dataKey="date"
+                    dataKey="timestamp"
+                    type="number"
+                    domain={timeDomain}
+                    ticks={xTicks}
+                    tickFormatter={(ts) => chartRange === '1Y' ? format(ts, 'MMM') : format(ts, 'yyyy')}
                     axisLine={{ stroke: '#333' }}
                     tickLine={false}
                     tick={{ fill: '#aaa', fontSize: 11, ...chartFont }}
-                    tickFormatter={formatChartDateAxis}
-                    interval="preserveStartEnd"
+                    interval={0}
+                    allowDataOverflow={false}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
-                    width={32}
+                    width={36}
                     tick={{ fill: '#aaa', fontSize: 11, ...chartFont }}
                   />
                   <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length || !label) return null;
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
                       const p = payload[0].payload;
+                      const dateLabel = p.date ? formatChartDateTooltip(p.date) : (p.timestamp ? format(p.timestamp, 'MMM d, yyyy') : '');
                       return (
                         <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', backgroundColor: '#0a0a0a', border: '1px solid #333', borderRadius: 10, padding: '12px 14px', minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
-                          <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{formatChartDateTooltip(String(label))}</div>
+                          <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{dateLabel}</div>
                           <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Weight: {p.weight} lb</div>
                           {p.est1RM != null && <div style={{ color: '#e0e0e0', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Est. 1RM: {p.est1RM} lb</div>}
                           {p.setsSummary ? <div style={{ color: '#888', fontSize: 12, fontWeight: '600', marginTop: 6, borderTop: '1px solid #222', paddingTop: 6 }}>Sets: {p.setsSummary}</div> : null}
