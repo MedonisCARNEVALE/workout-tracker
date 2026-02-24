@@ -119,11 +119,12 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   };
 
   const currentWorkout = useMemo(() => {
-    const overrideExercises = overrides?.[todaysType]?.[variation]?.exercises;
+    const overrideData = overrides?.[todaysType]?.[variation];
+    const overrideExercises = overrideData?.exercises;
     if (overrideExercises?.length) {
       return {
         type: todaysType === 'Legs' ? 'Heavy Legs and Shoulders' : todaysType,
-        date: 'Custom',
+        date: overrideData?.lastCompletedDate ?? 'Custom',
         exercises: overrideExercises,
       };
     }
@@ -191,9 +192,13 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     // Push / Pull: three most recent *distinct* templates (different exercises)
     const searchKey = todaysType;
     const distinctDates = getDistinctSessionDates(seedData, searchKey, 3);
-    const targetIdx =
-      variation === 'A' ? 0 : variation === 'B' ? 1 : 2;
-    const targetDate = distinctDates[targetIdx] ?? distinctDates[0];
+    let targetDate;
+    if (todaysType === 'Push' && variation === 'B') {
+      targetDate = '11/10/2025'; // Push B = Nov 10 2025 workout
+    } else {
+      const targetIdx = variation === 'A' ? 0 : variation === 'B' ? 1 : 2;
+      targetDate = distinctDates[targetIdx] ?? distinctDates[0];
+    }
     const filtered = seedData.filter(
       (d) =>
         d.type &&
@@ -867,7 +872,10 @@ export default function App() {
   const onSaveOverrides = async (type, variation, exercises) => {
     const next = {
       ...overrides,
-      [type]: { ...overrides[type], [variation]: { exercises } },
+      [type]: {
+        ...overrides[type],
+        [variation]: { ...overrides[type]?.[variation], exercises },
+      },
     };
     setOverrides(next);
     await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
@@ -898,6 +906,22 @@ export default function App() {
       const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
       const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
       setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+      // If this workout was from an override, set its source to today's date for next time
+      if (logs.length > 0 && overrides[completed.type]?.[completed.variation]) {
+        const completionDate = logs[0].date;
+        const next = {
+          ...overrides,
+          [completed.type]: {
+            ...overrides[completed.type],
+            [completed.variation]: {
+              ...overrides[completed.type][completed.variation],
+              lastCompletedDate: completionDate,
+            },
+          },
+        };
+        setOverrides(next);
+        await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
+      }
     }
   };
 
