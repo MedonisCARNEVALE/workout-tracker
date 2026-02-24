@@ -1,12 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from 'react-native';
 import { format } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import seedData from './seed_data.json'; 
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const THEME = { bg: '#000', card: '#111', text: '#fff', accent: '#CCFF00', highlight: '#222', dim: '#444' };
-const TOOLBAR_ID = "workout_nav_bar_2026"; // Hardcoded stable ID
+
+// Order: Push A → Pull A → Legs A → Push B → Pull B → Legs B → Push C → Pull C → Legs KOT
+const WORKOUT_SEQUENCE = [
+  { type: 'Push', variation: 'A' }, { type: 'Pull', variation: 'A' }, { type: 'Legs', variation: 'A' },
+  { type: 'Push', variation: 'B' }, { type: 'Pull', variation: 'B' }, { type: 'Legs', variation: 'B' },
+  { type: 'Push', variation: 'C' }, { type: 'Pull', variation: 'C' }, { type: 'Legs', variation: 'KOT' },
+];
+const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
+const OVERRIDES_KEY = 'workout_tracker_overrides';
 
 // --- UTILITIES ---
 const getWeight = (str) => {
@@ -56,18 +64,21 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish }) => {
-  const [todaysType, setTodaysType] = useState('Push');
-  const [variation, setVariation] = useState('A');
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides }) => {
+  const [todaysType, setTodaysType] = useState(initialType || 'Push');
+  const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
-  const [activeInputId, setActiveInputId] = useState(null);
-  const inputRefs = useRef({});
+  const [substitutions, setSubstitutions] = useState({}); // { originalName: 'Replacement name' } - session only, not saved to template
+  const [subbingFor, setSubbingFor] = useState(null); // exercise name we're entering a sub for
+  const [subInputValue, setSubInputValue] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [editingExercises, setEditingExercises] = useState([]);
+  const [newExerciseName, setNewExerciseName] = useState('');
 
   useEffect(() => {
-    if (Platform.OS === 'web') return;
-    const sub = Keyboard.addListener('keyboardDidHide', () => setActiveInputId(null));
-    return () => sub.remove();
-  }, []);
+    if (initialType) setTodaysType(initialType);
+    if (initialVariation) setVariation(initialVariation);
+  }, [initialType, initialVariation]);
 
   const showBWButton = (name) => {
     const bwKeywords = ['squat', 'push up', 'pull up', 'chin up', 'dip', 'abs', 'leg raise', 'crunch', 'sit up', 'hanging', 'plank'];
@@ -75,6 +86,14 @@ const TodayScreen = ({ history, onFinish }) => {
   };
 
   const currentWorkout = useMemo(() => {
+    const overrideExercises = overrides?.[todaysType]?.[variation]?.exercises;
+    if (overrideExercises?.length) {
+      return {
+        type: todaysType === 'Legs' ? 'Heavy Legs and Shoulders' : todaysType,
+        date: 'Custom',
+        exercises: overrideExercises,
+      };
+    }
     // Special handling for Legs day
     if (todaysType === 'Legs') {
       const heavyKey = 'heavy legs and shoulders';
@@ -153,34 +172,7 @@ const TodayScreen = ({ history, onFinish }) => {
       date: targetDate,
       exercises: filtered,
     };
-  }, [todaysType, variation]);
-
-  const inputOrder = useMemo(() => {
-    const order = [];
-    currentWorkout.exercises.forEach((ex, exIdx) => {
-      ex.sets.forEach((_, setIdx) => {
-        const isMarty = ex.exercise === 'Marty St Louis';
-        if (!isMarty) {
-          order.push(`ref-${exIdx}-${setIdx}-w`);
-        }
-        order.push(`ref-${exIdx}-${setIdx}-r`);
-      });
-      // Add note field as last stop for this exercise
-      order.push(`ref-${exIdx}-note`);
-    });
-    return order;
-  }, [currentWorkout]);
-
-  const navigateKeyboard = (direction) => {
-    const currentIndex = inputOrder.indexOf(activeInputId);
-    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-    if (nextIndex >= 0 && nextIndex < inputOrder.length) {
-      const nextId = inputOrder[nextIndex];
-      inputRefs.current[nextId]?.focus?.();
-    } else {
-      Keyboard.dismiss();
-    }
-  };
+  }, [todaysType, variation, overrides]);
 
   const updateSetInput = (exerciseName, setIndex, field, value) => {
     setInputs(prev => ({
@@ -199,16 +191,18 @@ const TodayScreen = ({ history, onFinish }) => {
         const s = ex.sets[idx];
         return `${s.weight || 0}x${s.reps || 0}`;
       });
+      const loggedName = substitutions[name] ?? name;
       return {
         date: format(new Date(), 'MM/dd/yy'),
-        exercise: name,
+        exercise: loggedName,
         notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : "") + (abs ? " (Abs Done)" : ""),
         weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ""),
         type: currentWorkout.type
       };
     });
-    onFinish(logs);
+    onFinish(logs, { type: todaysType, variation });
     setInputs({});
+    setSubstitutions({});
     Alert.alert("Success", "2026 Log Saved.");
   };
 
@@ -255,13 +249,97 @@ const TodayScreen = ({ history, onFinish }) => {
         </View>
         <Text style={styles.sourceDate}>Source: {currentWorkout.date}</Text>
 
-        {currentWorkout.exercises.map((item, exIdx) => (
+        <TouchableOpacity style={[styles.subBtn, { alignSelf: 'flex-start', marginBottom: 12 }]} onPress={() => {
+          if (editMode) {
+            setEditMode(false);
+          } else {
+            setEditingExercises(currentWorkout.exercises.map(e => ({ ...e, sets: e.sets?.map(s => ({ weight: s.weight ?? '', reps: s.reps ?? '' })) ?? [] })));
+            setEditMode(true);
+          }
+        }}>
+          <Text style={styles.subBtnText}>{editMode ? 'Cancel edit' : 'Edit workout'}</Text>
+        </TouchableOpacity>
+
+        {editMode ? (
+          <View style={styles.exCard}>
+            <Text style={styles.exName}>Add/remove exercises (saved to this A/B/C)</Text>
+            {editingExercises.map((ex, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={{ color: '#fff', flex: 1 }}>{ex.exercise}</Text>
+                <TouchableOpacity style={[styles.subBtn, { backgroundColor: '#522' }]} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
+                  <Text style={styles.subBtnText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <TextInput
+                style={[styles.noteInput, { flex: 1, minHeight: 40 }]}
+                placeholder="New exercise name"
+                placeholderTextColor="#666"
+                value={newExerciseName}
+                onChangeText={setNewExerciseName}
+              />
+              <TouchableOpacity style={styles.finishBtn} onPress={() => {
+                if (newExerciseName.trim()) {
+                  setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
+                  setNewExerciseName('');
+                }
+              }}>
+                <Text style={styles.finishText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={[styles.finishBtn, { marginTop: 8, backgroundColor: '#333' }]} onPress={() => {
+              onSaveOverrides?.(todaysType, variation, editingExercises);
+              setEditMode(false);
+            }}>
+              <Text style={styles.finishText}>Save workout</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {!editMode && currentWorkout.exercises.map((item, exIdx) => {
+          const displayName = substitutions[item.exercise] ?? item.exercise;
+          const isSubbed = !!substitutions[item.exercise];
+          return (
           <View key={`ex-card-${exIdx}`} style={styles.exCard}>
-            <Text style={styles.exName}>{item.exercise}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <Text style={[styles.exName, { flex: 1 }]} numberOfLines={2}>{displayName}{isSubbed ? ` (sub: ${item.exercise})` : ''}</Text>
+              <TouchableOpacity
+                style={[styles.subBtn, isSubbed && styles.subBtnActive]}
+                onPress={() => {
+                  if (substitutions[item.exercise]) {
+                    setSubstitutions(s => { const n = { ...s }; delete n[item.exercise]; return n; });
+                  } else {
+                    setSubbingFor(item.exercise);
+                  }
+                }}
+              >
+                <Text style={styles.subBtnText}>{isSubbed ? 'Clear' : 'Sub'}</Text>
+              </TouchableOpacity>
+            </View>
+            {subbingFor === item.exercise && (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <TextInput
+                  style={[styles.noteInput, { flex: 1, minHeight: 36 }]}
+                  placeholder="Replacement (today only)"
+                  placeholderTextColor="#666"
+                  value={subInputValue}
+                  onChangeText={setSubInputValue}
+                />
+                <TouchableOpacity style={styles.doneBtn} onPress={() => {
+                  if (subInputValue.trim()) setSubstitutions(s => ({ ...s, [item.exercise]: subInputValue.trim() }));
+                  setSubbingFor(null);
+                  setSubInputValue('');
+                }}>
+                  <Text style={styles.doneBtnText}>Apply</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.doneBtn} onPress={() => { setSubbingFor(null); setSubInputValue(''); }}>
+                  <Text style={styles.doneBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {item.note ? <Text style={styles.prevNote}>“{item.note}”</Text> : null}
             {item.sets.map((prev, setIdx) => {
-              const weightId = `ref-${exIdx}-${setIdx}-w`;
-              const repsId = `ref-${exIdx}-${setIdx}-r`;
               const isMarty = item.exercise === 'Marty St Louis';
               const isBWChecked = inputs[item.exercise]?.sets?.[setIdx]?.weight === 'BW';
 
@@ -275,12 +353,10 @@ const TodayScreen = ({ history, onFinish }) => {
                     {!isMarty && (
                       <View style={{ flex: 1, position: 'relative' }}>
                         <TextInput 
-                          ref={r => { if (r) inputRefs.current[weightId] = r; }}
                           style={styles.dualInput} 
                           placeholder="Lbs" 
                           placeholderTextColor="#444" 
                           keyboardType="number-pad"
-                          onFocus={() => setActiveInputId(weightId)}
                           value={inputs[item.exercise]?.sets?.[setIdx]?.weight || ''}
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
                         />
@@ -292,12 +368,10 @@ const TodayScreen = ({ history, onFinish }) => {
                       </View>
                     )}
                     <TextInput 
-                      ref={r => { if (r) inputRefs.current[repsId] = r; }}
                       style={[styles.dualInput, isMarty && { flex: 1 }]} 
                       placeholder="Reps" 
                       placeholderTextColor="#444" 
                       keyboardType="number-pad"
-                      onFocus={() => setActiveInputId(repsId)}
                       value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
                       onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
                     />
@@ -307,16 +381,12 @@ const TodayScreen = ({ history, onFinish }) => {
             })}
             {/* Notes input for this exercise */}
             <TextInput
-              ref={r => {
-                if (r) inputRefs.current[`ref-${exIdx}-note`] = r;
-              }}
               style={styles.noteInput}
               placeholder="Add notes for this exercise..."
               placeholderTextColor="#666"
               keyboardType="default"
               returnKeyType="done"
               multiline
-              onFocus={() => setActiveInputId(`ref-${exIdx}-note`)}
               value={inputs[item.exercise]?.cues || ''}
               onChangeText={v =>
                 setInputs(prev => ({
@@ -330,35 +400,74 @@ const TodayScreen = ({ history, onFinish }) => {
               }
             />
           </View>
-        ))}
+          );
+        })}
         <TouchableOpacity style={styles.finishBtn} onPress={() => save(false)}>
           <Text style={styles.finishText}>FINISH ✓</Text>
         </TouchableOpacity>
       </ScrollView>
-
-      {!!activeInputId && (
-        <View style={styles.keyboardToolbarContainer}>
-          <View style={styles.keyboardToolbar}>
-            <View style={styles.navGroup}>
-              <TouchableOpacity onPress={() => navigateKeyboard('prev')} style={styles.navBtn}>
-                <Text style={styles.navBtnText}>▲</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigateKeyboard('next')} style={styles.navBtn}>
-                <Text style={styles.navBtnText}>▼</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity onPress={() => Keyboard.dismiss()} style={styles.doneBtn}>
-              <Text style={styles.doneBtnText}>DONE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
     </View>
   );
 };
 
-// Placeholder so Archive tab works (chart can be added later, native-only)
-const ProgressTimeline = () => null;
+// Key lifts to show weight over time (match history exercise names)
+const LIFT_KEYWORDS = [
+  { key: 'Squat', keywords: ['squat'] },
+  { key: 'Bench Press', keywords: ['bench press', 'bench'] },
+  { key: 'Incline Bench', keywords: ['incline bench', 'incline press'] },
+  { key: 'Curls', keywords: ['curl'] },
+  { key: 'Deadlift', keywords: ['deadlift', 'dead lift'] },
+];
+
+const ProgressTimeline = ({ history }) => {
+  const chartData = useMemo(() => {
+    const byLift = {};
+    LIFT_KEYWORDS.forEach(({ key }) => { byLift[key] = []; });
+    (history || []).forEach((log) => {
+      const name = (log.exercise || '').toLowerCase();
+      const weight = typeof log.weight === 'number' ? log.weight : getWeight(String(log.notes || ''));
+      if (!name) return;
+      const match = LIFT_KEYWORDS.find(({ keywords }) => keywords.some(k => name.includes(k)));
+      if (!match || weight <= 0) return;
+      byLift[match.key].push({ date: log.date, weight });
+    });
+    const dates = [...new Set((history || []).map(h => h.date))].sort((a, b) => parseWorkoutDate(a) - parseWorkoutDate(b)).slice(-30);
+    return dates.map(date => {
+      const point = { date };
+      LIFT_KEYWORDS.forEach(({ key }) => {
+        const entry = byLift[key].find(e => e.date === date);
+        point[key] = entry ? entry.weight : null;
+      });
+      return point;
+    }).filter(p => Object.keys(p).some(k => k !== 'date' && p[k] != null));
+  }, [history]);
+
+  if (Platform.OS !== 'web' || !chartData.length) {
+    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Weight over time (web)</Text></View>;
+  }
+  try {
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts');
+    const colors = ['#CCFF00', '#00CCFF', '#FF00CC', '#00FF99', '#FF9900'];
+    return (
+      <View style={styles.chartWrapper}>
+        <Text style={styles.exName}>Weight over time</Text>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="date" stroke="#666" tick={{ fontSize: 10 }} />
+            <YAxis stroke="#666" tick={{ fontSize: 10 }} />
+            <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }} labelStyle={{ color: '#fff' }} />
+            {LIFT_KEYWORDS.map(({ key }, i) => (
+              <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} dot={{ r: 3 }} connectNulls />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </View>
+    );
+  } catch (e) {
+    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Chart unavailable</Text></View>;
+  }
+};
 
 const HistoryScreen = ({ history }) => {
   const [search, setSearch] = useState('');
@@ -366,6 +475,7 @@ const HistoryScreen = ({ history }) => {
     const filtered = history.filter(h => h.date && (h.exercise?.toLowerCase().includes(search.toLowerCase()) || h.date.includes(search)));
     const map = {};
     filtered.forEach(h => { if (!map[h.date]) map[h.date] = { date: h.date, data: [] }; map[h.date].data.push(h); });
+    // Newest first (most recent at top)
     return Object.values(map).sort((a, b) => parseWorkoutDate(b) - parseWorkoutDate(a));
   }, [history, search]);
 
@@ -397,21 +507,61 @@ export default function App() {
   const [tab, setTab] = useState('Today');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [suggestedWorkout, setSuggestedWorkout] = useState(null);
+  const [overrides, setOverrides] = useState({});
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const stored = await AsyncStorage.getItem('workout_history');
+      const [stored, overridesStored] = await Promise.all([
+        AsyncStorage.getItem('workout_history'),
+        AsyncStorage.getItem(OVERRIDES_KEY),
+      ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
       setHistory([...seedData, ...parsedStored]);
-    } catch (e) { setHistory(seedData); } finally { setLoading(false); }
+      setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
+    } catch (e) {
+      setHistory(seedData);
+      setOverrides({});
+    } finally { setLoading(false); }
   };
 
-  const onFinish = async (logs) => {
+  const onSaveOverrides = async (type, variation, exercises) => {
+    const next = {
+      ...overrides,
+      [type]: { ...overrides[type], [variation]: { exercises } },
+    };
+    setOverrides(next);
+    await AsyncStorage.setItem(OVERRIDES_KEY, JSON.stringify(next));
+  };
+
+  useEffect(() => {
+    if (loading) return;
+    const setNext = async () => {
+      try {
+        const last = await AsyncStorage.getItem(LAST_WORKOUT_KEY);
+        const lastObj = last ? JSON.parse(last) : null;
+        const idx = lastObj ? WORKOUT_SEQUENCE.findIndex(w => w.type === lastObj.type && w.variation === lastObj.variation) : -1;
+        const nextIdx = idx < 0 ? 0 : (idx + 1) % WORKOUT_SEQUENCE.length;
+        setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+      } catch (e) {
+        setSuggestedWorkout(WORKOUT_SEQUENCE[0]);
+      }
+    };
+    setNext();
+  }, [loading]);
+
+  const onFinish = async (logs, completed) => {
     const updated = [...history, ...logs];
     setHistory(updated);
     await AsyncStorage.setItem('workout_history', JSON.stringify(updated));
+    if (completed) {
+      await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
+      const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
+      const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
+      setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+    }
   };
 
   if (loading) return <View style={[styles.container, {justifyContent:'center'}]}><ActivityIndicator size="large" color="#CCFF00" /></View>;
@@ -423,7 +573,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} /> : <HistoryScreen history={history} />}</View>
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -472,12 +622,7 @@ const styles = StyleSheet.create({
   pickerBtn: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   pickerText: { color: '#666', fontSize: 9, fontWeight: 'bold' },
   noDataText: { color: '#444', textAlign: 'center', marginVertical: 20, fontSize: 11 },
-  keyboardToolbarContainer: { position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 999, elevation: 20 },
-  keyboardToolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1a1a1a', paddingHorizontal: 20, paddingVertical: 10, borderTopWidth: 1, borderColor: '#333' },
-  navGroup: { flexDirection: 'row', gap: 20 },
-  navBtn: { padding: 5 },
-  navBtnText: { color: '#CCFF00', fontSize: 20, fontWeight: 'bold' },
-  doneBtn: { backgroundColor: '#333', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 6 },
-  doneBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 12 }
-  // No custom keyboard toolbar styles
+  subBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
+  subBtnActive: { backgroundColor: '#333', borderColor: '#CCFF00' },
+  subBtnText: { color: '#CCFF00', fontSize: 11, fontWeight: 'bold' },
 });
