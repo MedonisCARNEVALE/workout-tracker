@@ -31,6 +31,38 @@ const parseWorkoutDate = (dateStr) => {
   return new Date(year, parts[0] - 1, parts[1]).getTime();
 };
 
+// Return true if search query matches this log (exercise or flexible date match).
+function searchMatchesLog(search, log) {
+  const q = String(search || '').trim().toLowerCase();
+  if (!q) return true;
+  if (log.exercise && log.exercise.toLowerCase().includes(q)) return true;
+  if (log.date && log.date.toLowerCase().includes(q)) return true;
+  const t = parseWorkoutDate(log.date);
+  if (!t) return false;
+  const d = new Date(t);
+  const logMonth = d.getMonth() + 1, logDay = d.getDate(), logYear = d.getFullYear();
+  // "1/12" or "1-12" → same month and day (any year)
+  const bySlash = q.split('/').map(s => s.trim());
+  const byDash = q.split('-').map(s => s.trim());
+  if (bySlash.length === 2 && !isNaN(Number(bySlash[0])) && !isNaN(Number(bySlash[1]))) {
+    if (parseInt(bySlash[0], 10) === logMonth && parseInt(bySlash[1], 10) === logDay) return true;
+  }
+  if (byDash.length === 2 && !isNaN(Number(byDash[0])) && !isNaN(Number(byDash[1]))) {
+    if (parseInt(byDash[0], 10) === logMonth && parseInt(byDash[1], 10) === logDay) return true;
+  }
+  // "January 2025", "jan 2025", "Jan 2025" → month + year
+  const months = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+  const abbrev = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  for (let i = 0; i < 12; i++) {
+    if (!q.includes(months[i]) && !q.includes(abbrev[i])) continue;
+    const yearMatch = q.match(/\b(20\d{2}|\d{2})\b/);
+    const year = yearMatch ? (yearMatch[1].length === 2 ? 2000 + parseInt(yearMatch[1], 10) : parseInt(yearMatch[1], 10)) : null;
+    if (year != null && logYear === year && logMonth === i + 1) return true;
+    if (year == null && logMonth === i + 1) return true;
+  }
+  return false;
+}
+
 /**
  * From workout history, get up to `count` session dates that each have a *different*
  * set of exercises (so A/B/C or A/B are distinct templates). Dates sorted newest first.
@@ -601,7 +633,7 @@ const ProgressTimeline = ({ history }) => {
 const HistoryScreen = ({ history }) => {
   const [search, setSearch] = useState('');
   const sessions = useMemo(() => {
-    const filtered = history.filter(h => h.date && (h.exercise?.toLowerCase().includes(search.toLowerCase()) || h.date.includes(search)));
+    const filtered = history.filter(h => h.date && searchMatchesLog(search, h));
     const map = {};
     filtered.forEach(h => { if (!map[h.date]) map[h.date] = { date: h.date, data: [] }; map[h.date].data.push(h); });
     const list = Object.values(map);
@@ -715,7 +747,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  scroll: { padding: 20, paddingBottom: 140 },
+  scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
   row: { flexDirection: 'row', gap: 15, marginBottom: 20 },
   cycleBtn: { flex: 1, backgroundColor: '#111', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#222' },
@@ -738,8 +770,8 @@ const styles = StyleSheet.create({
   bwBadgeTextActive: { color: '#000' },
   finishBtn: { backgroundColor: '#CCFF00', padding: 20, borderRadius: 8, alignItems: 'center', marginVertical: 20 },
   finishText: { fontWeight: '900', fontSize: 18, color: '#000' },
-  tabBar: { flexDirection: 'row', borderTopWidth: 1, borderColor: '#222', backgroundColor: '#000', paddingBottom: 25 },
-  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 15 },
+  tabBar: { flexDirection: 'row', borderTopWidth: 1, borderColor: '#222', backgroundColor: '#000', paddingTop: 8, paddingBottom: 8 },
+  tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   tabText: { color: '#666', fontWeight: 'bold' },
   searchBar: { backgroundColor: '#111', color: '#fff', padding: 15, margin: 20, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontWeight: 'bold' },
   sessionCard: { backgroundColor: '#111', borderRadius: 12, padding: 15, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: '#CCFF00' },
