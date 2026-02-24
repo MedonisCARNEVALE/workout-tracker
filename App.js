@@ -528,6 +528,33 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     return null;
   }, [exercisesToShow, inputs, substitutions, subSetCount, injectedWarmups]);
 
+  const workoutProgress = useMemo(() => {
+    let total = 0;
+    let completed = 0;
+    exercisesToShow.forEach((item) => {
+      const isSubbed = !!substitutions[item.exercise];
+      const warmUpCount = (injectedWarmups[item.exercise] || []).length;
+      const workingSetCount = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
+      const effectiveSetIndices = Array.from({ length: warmUpCount + workingSetCount }, (_, i) => i);
+      effectiveSetIndices.forEach((setIdx) => {
+        total += 1;
+        const setMod = inputs[item.exercise]?.sets?.[setIdx]?.modifier ?? (item.sets || [])[setIdx - warmUpCount]?.modifier ?? null;
+        const isSpecial = setMod === 'drop' || setMod === 'negative';
+        const w = inputs[item.exercise]?.sets?.[setIdx]?.weight;
+        const r = inputs[item.exercise]?.sets?.[setIdx]?.reps;
+        const hasWeight = w != null && String(w).trim() !== '';
+        const hasReps = r != null && String(r).trim() !== '';
+        if (isSpecial) {
+          if (r === '✓') completed += 1;
+        } else {
+          if (hasWeight && hasReps) completed += 1;
+        }
+      });
+    });
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, pct, isComplete: total > 0 && completed >= total };
+  }, [exercisesToShow, inputs, substitutions, subSetCount, injectedWarmups]);
+
   const [prSetKeys, setPrSetKeys] = useState({}); // { 'exerciseName-setIdx': true }
   const prSetKeysRef = useRef({});
   useEffect(() => { prSetKeysRef.current = prSetKeys; }, [prSetKeys]);
@@ -781,6 +808,15 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           >
             <Text style={styles.subBtnText}>Share</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBarTrack, workoutProgress.isComplete && styles.progressBarTrackComplete]}>
+            <View style={[styles.progressBarFill, { width: `${workoutProgress.pct}%` }, workoutProgress.isComplete && styles.progressBarFillComplete]} />
+          </View>
+          <Text style={[styles.progressBarText, workoutProgress.isComplete && styles.progressBarTextComplete]}>
+            {workoutProgress.isComplete ? 'Workout Finished! 🦍' : `${workoutProgress.pct}% Complete`}
+          </Text>
         </View>
 
         <Modal
@@ -1055,9 +1091,9 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                     ) : (
                       <>
                     {!isMarty && (
-                      <View style={{ flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: showBWButton(item.exercise) ? 44 : 0 }}>
+                      <View style={styles.lbsInputWrapper}>
                         <TextInput 
-                          style={[styles.dualInput, { flex: 1 }]} 
+                          style={styles.dualInput} 
                           placeholder="Lbs" 
                           placeholderTextColor="#A0A0A0" 
                           keyboardType="number-pad"
@@ -1072,14 +1108,15 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                         )}
                       </View>
                     )}
-                    <TextInput 
-                      style={[styles.dualInput, isMarty && { flex: 1 }]} 
-                      placeholder={item.targetReps ? `Reps (${item.targetReps})` : 'Reps'} 
-                      placeholderTextColor="#A0A0A0" 
-                      keyboardType="number-pad"
-                      value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
-                      onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
-                      onFocus={cancelRestTimer}
+                    <View style={styles.repsInputWrapper}>
+                      <TextInput 
+                        style={[styles.dualInput, isMarty && styles.dualInputFullWidth]} 
+                        placeholder={item.targetReps ? `Reps (${item.targetReps})` : 'Reps'} 
+                        placeholderTextColor="#A0A0A0" 
+                        keyboardType="number-pad"
+                        value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
+                        onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
+                        onFocus={cancelRestTimer}
                       onBlur={() => {
                         setTimeout(() => {
                           const inp = inputsRef.current;
@@ -1098,6 +1135,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                         }, 50);
                       }}
                     />
+                    </View>
                     </>
                     )}
                   </View>
@@ -1683,6 +1721,13 @@ const styles = StyleSheet.create({
   successUndoBtnText: { color: THEME.dim, fontSize: 14 },
   scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
+  progressBarContainer: { marginBottom: 16 },
+  progressBarTrack: { height: 6, backgroundColor: '#222', borderRadius: 3, overflow: 'hidden' },
+  progressBarTrackComplete: { backgroundColor: '#1a2a1a' },
+  progressBarFill: { height: '100%', backgroundColor: THEME.accent, borderRadius: 3 },
+  progressBarFillComplete: { backgroundColor: THEME.accent, shadowColor: THEME.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 6, elevation: 4 },
+  progressBarText: { color: '#666', fontSize: 11, fontWeight: '600', marginTop: 6 },
+  progressBarTextComplete: { color: THEME.accent, fontSize: 12, fontWeight: 'bold' },
   row: { flexDirection: 'row', gap: 15, marginBottom: 20 },
   cycleBtn: { flex: 1, backgroundColor: '#111', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: '#222' },
   cycleLabel: { color: '#666', fontSize: 10, fontWeight: 'bold' },
@@ -1694,7 +1739,7 @@ const styles = StyleSheet.create({
   shoulderCardDoneText: { color: THEME.accent, fontSize: 14, fontWeight: 'bold' },
   generateWarmupsBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', marginRight: 8 },
   generateWarmupsBtnText: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
-  exCard: { backgroundColor: '#1E1E1E', padding: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#333' },
+  exCard: { backgroundColor: '#1E1E1E', paddingHorizontal: 18, paddingVertical: 15, borderRadius: 12, marginBottom: 15, borderLeftWidth: 4, borderLeftColor: '#333' },
   exCardInSuperset: { marginBottom: 0, borderLeftWidth: 0 },
   supersetGroup: { marginBottom: 15, borderLeftWidth: 6, borderLeftColor: THEME.accent, borderRadius: 12, overflow: 'hidden' },
   supersetTag: { color: THEME.accent, fontSize: 10, fontWeight: 'bold', letterSpacing: 1, marginBottom: 6, marginLeft: 15, marginTop: 10 },
@@ -1715,12 +1760,15 @@ const styles = StyleSheet.create({
   warmupSetLabel: { color: '#888', fontSize: 10 },
   prSetRow: { borderWidth: 2, borderColor: '#FFD700', borderRadius: 8, padding: 8, backgroundColor: 'rgba(255, 215, 0, 0.06)' },
   prBadge: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
-  setLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
+  setLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   setNumber: { color: '#666', fontSize: 10, fontWeight: 'bold' },
   lastStats: { color: '#999', fontSize: 11, fontWeight: 'bold' },
   lastStatsOverload: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
-  inputGroup: { flexDirection: 'row', gap: 10 },
-  dualInput: { flex: 1, backgroundColor: '#242424', color: '#fff', padding: 12, borderRadius: 8, textAlign: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#333', fontSize: 16 },
+  inputGroup: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'stretch', gap: 10 },
+  lbsInputWrapper: { flex: 1, minWidth: 0, marginRight: 4, position: 'relative' },
+  repsInputWrapper: { flex: 1, minWidth: 0, marginLeft: 4 },
+  dualInput: { width: '100%', backgroundColor: '#242424', color: '#fff', paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8, textAlign: 'center', textAlignVertical: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#333', fontSize: 16 },
+  dualInputFullWidth: { flex: 1 },
   bwBadge: { position: 'absolute', right: 8, top: 10, backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: '#333' },
   bwBadgeText: { color: '#CCFF00', fontSize: 10, fontWeight: '900' },
   bwBadgeActive: { backgroundColor: '#CCFF00', borderColor: '#CCFF00' },
