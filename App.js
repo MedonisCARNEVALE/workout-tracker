@@ -547,11 +547,20 @@ function getBestWeightAnd1RM(log) {
 
 const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function formatChartDate(dateStr) {
+// X-axis: month + year (e.g. "Jan 2025") so the timeline is easy to read at a glance.
+function formatChartDateAxis(dateStr) {
   const t = parseWorkoutDate(dateStr);
   if (!t) return dateStr;
   const d = new Date(t);
-  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+  return `${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Tooltip: full date with year (e.g. "Jan 12, 2025") when tapping a point.
+function formatChartDateTooltip(dateStr) {
+  const t = parseWorkoutDate(dateStr);
+  if (!t) return dateStr;
+  const d = new Date(t);
+  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
 const ProgressTimeline = ({ history }) => {
@@ -605,14 +614,6 @@ const ProgressTimeline = ({ history }) => {
               </TouchableOpacity>
             ))}
           </View>
-          <View style={styles.rangePicker}>
-            <TouchableOpacity style={[styles.rangeBtn, chartRange === '1Y' && styles.rangeBtnActive]} onPress={() => setChartRange('1Y')}>
-              <Text style={[styles.rangeBtnText, chartRange === '1Y' && styles.rangeBtnTextActive]}>1Y</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.rangeBtn, chartRange === 'Lifetime' && styles.rangeBtnActive]} onPress={() => setChartRange('Lifetime')}>
-              <Text style={[styles.rangeBtnText, chartRange === 'Lifetime' && styles.rangeBtnTextActive]}>Lifetime</Text>
-            </TouchableOpacity>
-          </View>
         </View>
         {!chartData.length ? (
           <Text style={[styles.noDataText, chartFont]}>No data for {selectedLift}. Log weight and reps to see progress and est. 1RM.</Text>
@@ -627,7 +628,7 @@ const ProgressTimeline = ({ history }) => {
                     axisLine={{ stroke: '#333' }}
                     tickLine={false}
                     tick={{ fill: '#aaa', fontSize: 11, ...chartFont }}
-                    tickFormatter={formatChartDate}
+                    tickFormatter={formatChartDateAxis}
                     interval="preserveStartEnd"
                   />
                   <YAxis
@@ -642,7 +643,7 @@ const ProgressTimeline = ({ history }) => {
                       const p = payload[0].payload;
                       return (
                         <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', backgroundColor: '#0a0a0a', border: '1px solid #333', borderRadius: 10, padding: '12px 14px', minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
-                          <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{formatChartDate(String(label))}</div>
+                          <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{formatChartDateTooltip(String(label))}</div>
                           <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Weight: {p.weight} lb</div>
                           {p.est1RM != null && <div style={{ color: '#e0e0e0', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Est. 1RM: {p.est1RM} lb</div>}
                           {p.setsSummary ? <div style={{ color: '#888', fontSize: 12, fontWeight: '600', marginTop: 6, borderTop: '1px solid #222', paddingTop: 6 }}>Sets: {p.setsSummary}</div> : null}
@@ -655,9 +656,19 @@ const ProgressTimeline = ({ history }) => {
                 </LineChart>
               </ResponsiveContainer>
             </View>
-            <View style={[styles.chartLegend, styles.chartSectionInner]}>
-              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#CCFF00' }]} /><Text style={[styles.chartLegendText, chartFont]}>Weight</Text></View>
-              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#e0e0e0' }]} /><Text style={[styles.chartLegendText, chartFont]}>Est. 1RM</Text></View>
+            <View style={[styles.chartLegendRow, styles.chartSectionInner]}>
+              <View style={styles.rangePicker}>
+                <TouchableOpacity style={[styles.pickerBtn, chartRange === '1Y' && styles.rangeBtnActive]} onPress={() => setChartRange('1Y')}>
+                  <Text style={[styles.pickerText, chartRange === '1Y' && styles.rangeBtnTextActive, chartFont]}>1Y</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.pickerBtn, chartRange === 'Lifetime' && styles.rangeBtnActive]} onPress={() => setChartRange('Lifetime')}>
+                  <Text style={[styles.pickerText, chartRange === 'Lifetime' && styles.rangeBtnTextActive, chartFont]}>Lifetime</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.chartLegend}>
+                <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#CCFF00' }]} /><Text style={[styles.chartLegendText, chartFont]}>Weight</Text></View>
+                <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#e0e0e0' }]} /><Text style={[styles.chartLegendText, chartFont]}>Est. 1RM</Text></View>
+              </View>
             </View>
           </>
         )}
@@ -820,14 +831,13 @@ const styles = StyleSheet.create({
   chartSection: { marginBottom: 24 },
   chartSectionInner: { paddingHorizontal: 20 },
   chartEdgeToEdge: { marginHorizontal: -20, paddingHorizontal: 16 },
-  rangePicker: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  rangeBtn: { paddingVertical: 8, paddingHorizontal: 18, borderRadius: 20, borderWidth: 1, borderColor: '#333', backgroundColor: 'transparent' },
-  rangeBtnActive: { borderColor: THEME.accent, backgroundColor: THEME.highlight },
-  rangeBtnText: { color: '#666', fontSize: 12, fontWeight: 'bold' },
-  rangeBtnTextActive: { color: '#000', fontSize: 12, fontWeight: 'bold' },
+  chartLegendRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 12 },
+  rangePicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  rangeBtnActive: { borderColor: THEME.accent, backgroundColor: THEME.accent },
+  rangeBtnTextActive: { color: '#000', fontWeight: 'bold' },
   chartWrapper: { marginBottom: 30, backgroundColor: '#111', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#1a1a1a' },
   liftPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 10 },
+  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20 },
   chartLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chartLegendDot: { width: 10, height: 10, borderRadius: 5 },
   chartLegendText: { color: '#888', fontSize: 12, fontWeight: 'bold' },
