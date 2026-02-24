@@ -419,13 +419,26 @@ const LIFT_KEYWORDS = [
   { key: 'Deadlift', keywords: ['deadlift', 'dead lift'] },
 ];
 
+function getWeightFromLog(log) {
+  if (log == null) return 0;
+  if (typeof log.weight === 'number' && log.weight > 0) return log.weight;
+  const fromNotes = getWeight(String(log.notes || log.note || ''));
+  if (fromNotes > 0) return fromNotes;
+  const firstSet = log.sets?.[0];
+  if (firstSet && firstSet.weight != null && firstSet.weight !== 'Bodyweight') {
+    const w = Number(firstSet.weight);
+    return isNaN(w) ? 0 : w;
+  }
+  return 0;
+}
+
 const ProgressTimeline = ({ history }) => {
   const chartData = useMemo(() => {
     const byLift = {};
     LIFT_KEYWORDS.forEach(({ key }) => { byLift[key] = []; });
     (history || []).forEach((log) => {
       const name = (log.exercise || '').toLowerCase();
-      const weight = typeof log.weight === 'number' ? log.weight : getWeight(String(log.notes || ''));
+      const weight = getWeightFromLog(log);
       if (!name) return;
       const match = LIFT_KEYWORDS.find(({ keywords }) => keywords.some(k => name.includes(k)));
       if (!match || weight <= 0) return;
@@ -442,8 +455,11 @@ const ProgressTimeline = ({ history }) => {
     }).filter(p => Object.keys(p).some(k => k !== 'date' && p[k] != null));
   }, [history]);
 
-  if (Platform.OS !== 'web' || !chartData.length) {
-    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Weight over time (web)</Text></View>;
+  if (Platform.OS !== 'web') {
+    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Weight-over-time chart is on the web version.</Text></View>;
+  }
+  if (!chartData.length) {
+    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Log some lifts (squat, bench, curls, deadlift, etc.) to see weight over time.</Text></View>;
   }
   try {
     const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts');
@@ -475,8 +491,9 @@ const HistoryScreen = ({ history }) => {
     const filtered = history.filter(h => h.date && (h.exercise?.toLowerCase().includes(search.toLowerCase()) || h.date.includes(search)));
     const map = {};
     filtered.forEach(h => { if (!map[h.date]) map[h.date] = { date: h.date, data: [] }; map[h.date].data.push(h); });
-    // Newest first (most recent at top)
-    return Object.values(map).sort((a, b) => parseWorkoutDate(b) - parseWorkoutDate(a));
+    const list = Object.values(map);
+    list.sort((a, b) => parseWorkoutDate(b.date) - parseWorkoutDate(a.date));
+    return list;
   }, [history, search]);
 
   return (
