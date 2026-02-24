@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Keyboard, Animated, Modal, Pressable, Share, Vibration } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Keyboard, Animated, Easing, Modal, Pressable, Share, Vibration } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
@@ -172,6 +172,7 @@ const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
 const AB_TEMPLATES_KEY = 'workout_tracker_ab_templates';
 const LAST_AB_WORKOUT_KEY = 'workout_tracker_last_ab_workout';
+const IN_PROGRESS_WORKOUT_KEY = 'workout_tracker_in_progress';
 
 const DEFAULT_AB_TEMPLATES = {
   A: { exercise: 'Decline weighted abs', note: '', targetReps: 'fail', sets: [{ weight: '35', reps: 'fail' }, { weight: '35', reps: 'fail' }, { weight: '35', reps: 'fail' }] },
@@ -329,7 +330,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer, initialInProgress }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -344,12 +345,42 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [shoulderWarmupDone, setShoulderWarmupDone] = useState(false);
   const [injectedWarmups, setInjectedWarmups] = useState({}); // { exerciseName: [ { weight, reps }, ... ] }
   const inputsRef = useRef(inputs);
+  const hasRestoredRef = useRef(false);
   useEffect(() => { inputsRef.current = inputs; }, [inputs]);
 
   useEffect(() => {
     if (initialType) setTodaysType(initialType);
     if (initialVariation) setVariation(initialVariation);
   }, [initialType, initialVariation]);
+
+  useEffect(() => {
+    if (hasRestoredRef.current || !initialInProgress) return;
+    const today = format(new Date(), 'MM/dd/yy');
+    if (initialInProgress.date !== today) return;
+    hasRestoredRef.current = true;
+    setTodaysType(initialInProgress.type || initialType || 'Push');
+    setVariation(initialInProgress.variation || initialVariation || 'A');
+    setInputs(initialInProgress.inputs || {});
+    setSubstitutions(initialInProgress.substitutions || {});
+    setSubSetCount(initialInProgress.subSetCount || {});
+    setInjectedWarmups(initialInProgress.injectedWarmups || {});
+  }, [initialInProgress, initialType, initialVariation]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const payload = {
+        date: format(new Date(), 'MM/dd/yy'),
+        type: todaysType,
+        variation,
+        inputs,
+        substitutions,
+        subSetCount,
+        injectedWarmups,
+      };
+      AsyncStorage.setItem(IN_PROGRESS_WORKOUT_KEY, JSON.stringify(payload));
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [todaysType, variation, inputs, substitutions, subSetCount, injectedWarmups]);
 
   const showBWButton = (name) => {
     const bwKeywords = ['squat', 'push up', 'pull up', 'chin up', 'dip', 'abs', 'leg raise', 'crunch', 'sit up', 'hanging', 'plank'];
@@ -569,6 +600,31 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const prSetKeysRef = useRef({});
   useEffect(() => { prSetKeysRef.current = prSetKeys; }, [prSetKeys]);
 
+  const [finishEarlyModalVisible, setFinishEarlyModalVisible] = useState(false);
+  const [incompleteSetCount, setIncompleteSetCount] = useState(0);
+
+  const countIncompleteSets = () => {
+    let incomplete = 0;
+    exercisesToShow.forEach((item) => {
+      const warmUpCount = (injectedWarmups[item.exercise] || []).length;
+      const workingSetCount = substitutions[item.exercise] ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
+      const setIndices = Array.from({ length: warmUpCount + workingSetCount }, (_, i) => i);
+      setIndices.forEach((setIdx) => {
+        const setMod = inputs[item.exercise]?.sets?.[setIdx]?.modifier ?? (item.sets || [])[setIdx - warmUpCount]?.modifier ?? null;
+        const isSpecial = setMod === 'drop' || setMod === 'negative';
+        const s = inputs[item.exercise]?.sets?.[setIdx];
+        const hasWeight = s?.weight != null && String(s.weight).trim() !== '';
+        const hasReps = s?.reps != null && String(s.reps).trim() !== '';
+        if (isSpecial) {
+          if (s?.reps !== '✓') incomplete += 1;
+        } else {
+          if (!hasWeight || !hasReps) incomplete += 1;
+        }
+      });
+    });
+    return incomplete;
+  };
+
   const showShoulderCard =
     todaysType === 'Push' ||
     (todaysType === 'Legs' && (variation === 'A' || variation === 'B'));
@@ -682,58 +738,76 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     return ` - ${parts.join(' + ')}`;
   };
 
-  const save = (abs) => {
+  const isSetComplete = (name, setIdx, setMod, s) => {
+    if (!s) return false;
+    if (setMod === 'drop' || setMod === 'negative') return s.reps === '✓';
+    const hasWeight = s.weight != null && String(s.weight).trim() !== '';
+    const hasReps = s.reps != null && String(s.reps).trim() !== '';
+    return hasWeight && hasReps;
+  };
+
+  const save = (abs, pruneEmpty = false) => {
     const completedAt = new Date().toISOString();
     const logs = Object.keys(inputs).map(name => {
       const ex = inputs[name] || {};
-      const setArray = Object.keys(ex.sets || {}).sort().map(idx => {
+      const item = exercisesToShow.find(e => e.exercise === name);
+      const warmUpCount = item ? (injectedWarmups[name] || []).length : 0;
+      const setIndices = Object.keys(ex.sets || {}).map(Number).sort((a, b) => a - b);
+      const setArray = [];
+      setIndices.forEach(idx => {
         const s = ex.sets[idx];
-        const mod = s?.modifier;
-        if (mod === 'drop') return 'Dropset';
-        if (mod === 'negative') return 'Negative';
-        return `${s.weight || 0}x${s.reps || 0}`;
+        const setMod = s?.modifier ?? (item?.sets || [])[idx - warmUpCount]?.modifier ?? null;
+        if (pruneEmpty && !isSetComplete(name, idx, setMod, s)) return;
+        if (setMod === 'drop') setArray.push('Dropset');
+        else if (setMod === 'negative') setArray.push('Negative');
+        else setArray.push(`${s?.weight ?? 0}x${s?.reps ?? 0}`);
       });
       const loggedName = substitutions[name] ?? name;
+      if (pruneEmpty && setArray.length === 0) return null;
       return {
         date: format(new Date(), 'MM/dd/yy'),
         completedAt,
         exercise: loggedName,
-        notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : "") + (abs ? " (Abs Done)" : ""),
-        weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ""),
-        type: currentWorkout.type
+        notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : '') + (abs ? ' (Abs Done)' : ''),
+        weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
+        type: currentWorkout.type,
       };
-    });
+    }).filter(Boolean);
     let abCompletion = null;
     const abItem = exercisesToShow.find(it => it._abCycle);
     if (abItem) {
       const ex = inputs[abItem.exercise] || {};
-      const setKeys = Object.keys(ex.sets || {}).sort();
+      const setKeys = Object.keys(ex.sets || {}).map(Number).sort((a, b) => a - b);
       const sets = setKeys.length
         ? setKeys.map(idx => {
             const s = ex.sets[idx];
+            const setMod = s?.modifier ?? (abItem.sets || [])[idx - (injectedWarmups[abItem.exercise] || []).length]?.modifier ?? null;
+            if (pruneEmpty && !isSetComplete(abItem.exercise, idx, setMod, s)) return null;
             return { weight: String(s?.weight ?? ''), reps: String(s?.reps ?? '').trim() || '' };
-          })
+          }).filter(Boolean)
         : (abItem.sets || []).map(s => ({ weight: String(s?.weight ?? ''), reps: String(s?.reps ?? '').trim() || '' }));
-      abCompletion = {
-        type: abItem._abCycle,
-        template: {
-          exercise: abItem.exercise,
-          note: ex.cues ?? abItem.note ?? '',
-          targetReps: abItem.targetReps ?? 'fail',
-          sets,
-        },
-      };
-      const abLogged = logs.some(l => l.exercise === abItem.exercise || (substitutions[abItem.exercise] && l.exercise === substitutions[abItem.exercise]));
-      if (!abLogged) {
-        const setArray = sets.map(s => `${s.weight || 0}x${s.reps || 0}`);
-        logs.push({
-          date: format(new Date(), 'MM/dd/yy'),
-          completedAt,
-          exercise: substitutions[abItem.exercise] ?? abItem.exercise,
-          notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : ''),
-          weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
-          type: currentWorkout.type,
-        });
+      if (!pruneEmpty || sets.length > 0) {
+        abCompletion = {
+          type: abItem._abCycle,
+          template: {
+            exercise: abItem.exercise,
+            note: ex.cues ?? abItem.note ?? '',
+            targetReps: abItem.targetReps ?? 'fail',
+            sets,
+          },
+        };
+        const abLogged = logs.some(l => l.exercise === abItem.exercise || (substitutions[abItem.exercise] && l.exercise === substitutions[abItem.exercise]));
+        if (!abLogged) {
+          const setArray = sets.map(s => `${s.weight || 0}x${s.reps || 0}`);
+          logs.push({
+            date: format(new Date(), 'MM/dd/yy'),
+            completedAt,
+            exercise: substitutions[abItem.exercise] ?? abItem.exercise,
+            notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : ''),
+            weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
+            type: currentWorkout.type,
+          });
+        }
       }
     }
     onFinish(logs, { type: todaysType, variation }, abCompletion);
@@ -1120,7 +1194,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           keyboardType="number-pad"
                           value={inputs[item.exercise]?.sets?.[setIdx]?.weight || ''}
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
-                          onFocus={cancelRestTimer}
                         />
                         {showBWButton(item.exercise) && (
                           <TouchableOpacity style={[styles.bwBadge, isBWChecked && styles.bwBadgeActive]} onPress={() => updateSetInput(item.exercise, setIdx, 'weight', isBWChecked ? '' : 'BW')}>
@@ -1137,7 +1210,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                         keyboardType="number-pad"
                         value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
                         onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
-                        onFocus={cancelRestTimer}
                       onBlur={() => {
                         setTimeout(() => {
                           const inp = inputsRef.current;
@@ -1212,10 +1284,42 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           </View>
           );
         })}
-        <TouchableOpacity style={styles.finishBtn} onPress={() => save(false)}>
+        <TouchableOpacity style={styles.finishBtn} onPress={() => {
+          const incomplete = countIncompleteSets();
+          if (incomplete > 0) {
+            setIncompleteSetCount(incomplete);
+            setFinishEarlyModalVisible(true);
+          } else {
+            save(false);
+          }
+        }}>
           <Text style={styles.finishText}>FINISH ✓</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        visible={finishEarlyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFinishEarlyModalVisible(false)}
+      >
+        <Pressable style={styles.finishEarlyOverlay} onPress={() => setFinishEarlyModalVisible(false)}>
+          <Pressable style={styles.finishEarlyCard} onPress={() => {}}>
+            <Text style={styles.finishEarlyTitle}>Finish Early?</Text>
+            <Text style={styles.finishEarlyBody}>
+              You still have {incompleteSetCount} set{incompleteSetCount !== 1 ? 's' : ''} left. Do you want to skip them and save your progress, or go back and finish?
+            </Text>
+            <View style={styles.finishEarlyActions}>
+              <TouchableOpacity style={styles.finishEarlyPrimaryBtn} onPress={() => setFinishEarlyModalVisible(false)}>
+                <Text style={styles.finishEarlyPrimaryBtnText}>Keep Grinding</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.finishEarlySecondaryBtn} onPress={() => { setFinishEarlyModalVisible(false); save(false, true); }}>
+                <Text style={styles.finishEarlySecondaryBtnText}>Skip & Save</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
       </View>
     </KeyboardAvoidingView>
   );
@@ -1558,6 +1662,7 @@ export default function App() {
   const [lastCompletedWorkout, setLastCompletedWorkout] = useState(null);
   const [totalTonnage, setTotalTonnage] = useState(null);
   const [todayProgress, setTodayProgress] = useState(null);
+  const [inProgressSnapshot, setInProgressSnapshot] = useState(null); // restored workout-in-progress for today (survives reload)
   const [restTimerSeconds, setRestTimerSeconds] = useState(null);
   const [isTimerMuted, setIsTimerMuted] = useState(false);
   const restTimerRef = useRef(null);
@@ -1568,15 +1673,17 @@ export default function App() {
 
   const stickyBottomAnim = useRef(new Animated.Value(TAB_BAR_HEIGHT)).current;
 
+  const keyboardEasingRef = useRef(Easing.bezier(0.25, 0.1, 0.25, 1));
   useEffect(() => {
+    const easing = keyboardEasingRef.current;
     const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
       const h = e.endCoordinates?.height ?? 0;
       const duration = e.duration ?? (Platform.OS === 'ios' ? 250 : 100);
-      Animated.timing(stickyBottomAnim, { toValue: h, duration, useNativeDriver: false }).start();
+      Animated.timing(stickyBottomAnim, { toValue: h, duration, easing, useNativeDriver: false }).start();
     });
     const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', (e) => {
       const duration = e.duration ?? (Platform.OS === 'ios' ? 250 : 100);
-      Animated.timing(stickyBottomAnim, { toValue: TAB_BAR_HEIGHT, duration, useNativeDriver: false }).start();
+      Animated.timing(stickyBottomAnim, { toValue: TAB_BAR_HEIGHT, duration, easing, useNativeDriver: false }).start();
     });
     return () => { showSub.remove(); hideSub.remove(); };
   }, [stickyBottomAnim]);
@@ -1630,11 +1737,12 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const [stored, overridesStored, abTemplatesStored, lastAbStored] = await Promise.all([
+      const [stored, overridesStored, abTemplatesStored, lastAbStored, inProgressStored] = await Promise.all([
         AsyncStorage.getItem('workout_history'),
         AsyncStorage.getItem(OVERRIDES_KEY),
         AsyncStorage.getItem(AB_TEMPLATES_KEY),
         AsyncStorage.getItem(LAST_AB_WORKOUT_KEY),
+        AsyncStorage.getItem(IN_PROGRESS_WORKOUT_KEY),
       ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
       const normalizedSeed = seedData.map(normalizeHistoryLog);
@@ -1642,11 +1750,22 @@ export default function App() {
       setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
       setAbTemplates(abTemplatesStored ? { ...DEFAULT_AB_TEMPLATES, ...JSON.parse(abTemplatesStored) } : DEFAULT_AB_TEMPLATES);
       setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
+      let restored = null;
+      if (inProgressStored) {
+        try {
+          const parsed = JSON.parse(inProgressStored);
+          const today = format(new Date(), 'MM/dd/yy');
+          if (parsed.date === today && parsed.type && parsed.variation) restored = parsed;
+          else await AsyncStorage.removeItem(IN_PROGRESS_WORKOUT_KEY);
+        } catch (_) { await AsyncStorage.removeItem(IN_PROGRESS_WORKOUT_KEY); }
+      }
+      setInProgressSnapshot(restored);
     } catch (e) {
       setHistory(seedData.map(normalizeHistoryLog));
       setOverrides({});
       setAbTemplates(DEFAULT_AB_TEMPLATES);
       setLastAbWorkout(null);
+      setInProgressSnapshot(null);
     } finally { setLoading(false); }
   };
 
@@ -1717,6 +1836,8 @@ export default function App() {
       setAbTemplates(nextAbTemplates);
       await AsyncStorage.setItem(AB_TEMPLATES_KEY, JSON.stringify(nextAbTemplates));
     }
+    await AsyncStorage.removeItem(IN_PROGRESS_WORKOUT_KEY);
+    setInProgressSnapshot(null);
   };
 
   const onUndoLastSession = async () => {
@@ -1751,7 +1872,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} initialInProgress={inProgressSnapshot} /> : <HistoryScreen history={history} />}</View>
         {tab === 'Today' && (restTimerSeconds != null || (todayProgress != null && todayProgress.completed >= 1)) ? (
           <Animated.View style={[styles.stickyBottomWrap, { bottom: stickyBottomAnim }]}>
             {restTimerSeconds != null ? (
@@ -1886,7 +2007,7 @@ const styles = StyleSheet.create({
   bwBadgeTextActive: { color: '#000' },
   finishBtn: { backgroundColor: '#CCFF00', padding: 20, borderRadius: 8, alignItems: 'center', marginVertical: 20 },
   finishText: { fontWeight: '900', fontSize: 18, color: '#000' },
-  restTimerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#111', borderTopWidth: 1, borderTopColor: THEME.accent, borderLeftWidth: 4, borderLeftColor: THEME.accent },
+  restTimerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#111', borderTopWidth: 1, borderTopColor: THEME.accent, borderLeftWidth: 4, borderLeftColor: THEME.accent, minHeight: 52 },
   restTimerText: { color: THEME.accent, fontSize: 24, fontWeight: '900' },
   restTimerButtons: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   restTimerBtn: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
@@ -1895,7 +2016,7 @@ const styles = StyleSheet.create({
   restTimerSkipBtn: { backgroundColor: 'transparent', borderColor: '#555' },
   restTimerSkipBtnText: { color: '#888', fontSize: 14, fontWeight: '600' },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, borderColor: '#222', backgroundColor: '#000', paddingTop: 8, paddingBottom: 8 },
-  stickyBottomWrap: { position: 'absolute', left: 0, right: 0, backgroundColor: '#000' },
+  stickyBottomWrap: { position: 'absolute', left: 0, right: 0, backgroundColor: '#000', flexDirection: 'column' },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   tabText: { color: '#666', fontWeight: 'bold' },
   searchBar: { backgroundColor: '#111', color: '#fff', padding: 15, margin: 20, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontWeight: 'bold', fontSize: 16 },
@@ -1930,6 +2051,15 @@ const styles = StyleSheet.create({
   addRemoveSetBtnDisabled: { opacity: 0.4 },
   addRemoveSetText: { color: '#CCFF00', fontSize: 12, fontWeight: 'bold' },
   modalContainer: { flex: 1, backgroundColor: '#000' },
+  finishEarlyOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  finishEarlyCard: { backgroundColor: '#111', borderRadius: 16, padding: 24, width: '100%', maxWidth: 340, borderWidth: 1, borderColor: '#222' },
+  finishEarlyTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 12, textAlign: 'center' },
+  finishEarlyBody: { color: '#aaa', fontSize: 16, lineHeight: 24, marginBottom: 24, textAlign: 'center' },
+  finishEarlyActions: { gap: 12 },
+  finishEarlyPrimaryBtn: { backgroundColor: THEME.accent, paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  finishEarlyPrimaryBtnText: { color: '#000', fontSize: 17, fontWeight: '900' },
+  finishEarlySecondaryBtn: { paddingVertical: 16, borderRadius: 12, alignItems: 'center', borderWidth: 2, borderColor: THEME.accent },
+  finishEarlySecondaryBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold' },
   modalHeader: { paddingTop: 24, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#222' },
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 },
   modalTitle: { color: '#fff', fontSize: 20, fontWeight: '900', flex: 1, minWidth: 0 },
