@@ -61,6 +61,25 @@ const normalizeExerciseSets = (ex) => {
 
 const normalizeExerciseName = (name) => (name || '').trim().toLowerCase();
 
+/** Build a notes string from seed_data.json record format (sets array) so history lookups work. */
+const buildNotesFromSeedSets = (record) => {
+  if (!record || !Array.isArray(record.sets) || record.sets.length === 0) return '';
+  const parts = record.sets.map((s) => {
+    const w = s.weight === 'Bodyweight' ? 'BW' : (s.weight != null ? String(s.weight) : '0');
+    const r = s.reps != null ? String(s.reps) : '';
+    return `${w}x${r}`;
+  });
+  const note = record.note ? String(record.note).trim() : '';
+  return note ? `${parts.join(', ')} | ${note}` : parts.join(', ');
+};
+
+/** Normalize a log so it has .notes for getLastLogForExercise / parseNotesToSets. Seed_data has .sets; saved logs have .notes. */
+const normalizeHistoryLog = (log) => {
+  if (log.notes != null && String(log.notes).trim() !== '') return log;
+  const notes = buildNotesFromSeedSets(log);
+  return notes ? { ...log, notes } : log;
+};
+
 const getLastLogForExercise = (history, exerciseName) => {
   const notesStr = (log) => String(log.notes || log.note || '');
   const key = normalizeExerciseName(exerciseName);
@@ -1070,9 +1089,9 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                     </View>
                     {!isWarmup && overloadNudgeMap[item.exercise] ? (
                       <Text style={styles.lastStatsOverload}>Target: {overloadNudgeMap[item.exercise].targetWeight} lbs 📈</Text>
-                    ) : (
-                      <Text style={styles.lastStats}>{prevSet ? `Last: ${prevSet.weight || 'BW'} × ${prevSet.reps}` : '—'}</Text>
-                    )}
+                    ) : prevSet ? (
+                      <Text style={styles.lastStats}>Last: {prevSet.weight || 'BW'} × {prevSet.reps}</Text>
+                    ) : null}
                   </View>
                   <View style={styles.inputGroup}>
                     {isSpecialSet ? (
@@ -1581,12 +1600,13 @@ export default function App() {
         AsyncStorage.getItem(LAST_AB_WORKOUT_KEY),
       ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
-      setHistory([...seedData, ...parsedStored]);
+      const normalizedSeed = seedData.map(normalizeHistoryLog);
+      setHistory([...normalizedSeed, ...parsedStored]);
       setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
       setAbTemplates(abTemplatesStored ? { ...DEFAULT_AB_TEMPLATES, ...JSON.parse(abTemplatesStored) } : DEFAULT_AB_TEMPLATES);
       setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
     } catch (e) {
-      setHistory(seedData);
+      setHistory(seedData.map(normalizeHistoryLog));
       setOverrides({});
       setAbTemplates(DEFAULT_AB_TEMPLATES);
       setLastAbWorkout(null);
