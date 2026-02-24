@@ -291,7 +291,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -574,6 +574,10 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     return { total, completed, pct, isComplete: total > 0 && completed >= total };
   }, [exercisesToShow, inputs, substitutions, subSetCount, injectedWarmups]);
 
+  useEffect(() => {
+    onProgressUpdate?.(workoutProgress);
+  }, [workoutProgress, onProgressUpdate]);
+
   const [prSetKeys, setPrSetKeys] = useState({}); // { 'exerciseName-setIdx': true }
   const prSetKeysRef = useRef({});
   useEffect(() => { prSetKeysRef.current = prSetKeys; }, [prSetKeys]);
@@ -849,15 +853,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           </TouchableOpacity>
         </View>
 
-        <View style={styles.progressBarContainer}>
-          <View style={[styles.progressBarTrack, workoutProgress.isComplete && styles.progressBarTrackComplete]}>
-            <View style={[styles.progressBarFill, { width: `${workoutProgress.pct}%` }, workoutProgress.isComplete && styles.progressBarFillComplete]} />
-          </View>
-          <Text style={[styles.progressBarText, workoutProgress.isComplete && styles.progressBarTextComplete]}>
-            {workoutProgress.isComplete ? 'Workout Finished! 🦍' : `${workoutProgress.pct}% Complete`}
-          </Text>
-        </View>
-
         <Modal
           visible={editModalVisible}
           animationType="slide"
@@ -1126,7 +1121,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           }}
                           disabled={specialSetDone}
                         >
-                          <Text style={styles.specialSetBtnText}>{specialSetDone ? 'Done' : setModifier === 'drop' ? '✅ Complete Dropset' : '✅ Complete Negative'}</Text>
+                          <Text style={[styles.specialSetBtnText, specialSetDone && styles.specialSetBtnTextDone]}>{specialSetDone ? '✓ Done' : setModifier === 'drop' ? 'Complete Dropset' : 'Complete Negative'}</Text>
                         </TouchableOpacity>
                       </View>
                     ) : (
@@ -1610,6 +1605,7 @@ export default function App() {
   const [lastCompletedAt, setLastCompletedAt] = useState(null);
   const [lastCompletedWorkout, setLastCompletedWorkout] = useState(null);
   const [totalTonnage, setTotalTonnage] = useState(null);
+  const [todayProgress, setTodayProgress] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -1736,7 +1732,22 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} /> : <HistoryScreen history={history} />}</View>
+        {tab === 'Today' && todayProgress != null && todayProgress.completed >= 1 ? (
+          <>
+            <View style={styles.progressBarStickyWrap}>
+              <View style={styles.progressBarStickyRow}>
+                <Text style={[styles.progressBarStickyText, todayProgress.isComplete && styles.progressBarTextComplete]} numberOfLines={1}>
+                  {todayProgress.isComplete ? 'Done' : `${todayProgress.pct}% Complete`}
+                </Text>
+                <View style={[styles.progressBarTrack, todayProgress.isComplete && styles.progressBarTrackComplete, styles.progressBarTrackSticky]}>
+                  <View style={[styles.progressBarFill, { width: `${todayProgress.pct}%` }, todayProgress.isComplete && styles.progressBarFillComplete]} />
+                </View>
+              </View>
+            </View>
+            <View style={styles.progressBarDivider} />
+          </>
+        ) : null}
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -1764,6 +1775,11 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
   progressBarContainer: { marginBottom: 16 },
+  progressBarStickyWrap: { backgroundColor: '#000', paddingVertical: 8, paddingHorizontal: 20 },
+  progressBarStickyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  progressBarStickyText: { color: '#666', fontSize: 11, fontWeight: '600', minWidth: 72 },
+  progressBarTrackSticky: { flex: 1, height: 5 },
+  progressBarDivider: { height: 1, backgroundColor: '#222' },
   progressBarTrack: { height: 6, backgroundColor: '#222', borderRadius: 3, overflow: 'hidden' },
   progressBarTrackComplete: { backgroundColor: '#1a2a1a' },
   progressBarFill: { height: '100%', backgroundColor: THEME.accent, borderRadius: 3 },
@@ -1794,10 +1810,11 @@ const styles = StyleSheet.create({
   modifierChipNegative: { backgroundColor: 'rgba(204, 255, 0, 0.2)' },
   modifierChipText: { color: '#888', fontSize: 12 },
   modifierChipTextActive: { color: THEME.accent },
-  specialSetBtn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, borderWidth: 2, borderColor: THEME.accent, flex: 1, justifyContent: 'center', alignItems: 'center' },
+  specialSetBtn: { backgroundColor: '#222', paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: '#333', flex: 1, justifyContent: 'center', alignItems: 'center' },
   specialSetBtnWrapper: { flex: 1, alignSelf: 'stretch' },
-  specialSetBtnDone: { opacity: 0.7, borderColor: '#444' },
-  specialSetBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  specialSetBtnDone: { backgroundColor: 'rgba(204, 255, 0, 0.15)', borderWidth: 2, borderColor: THEME.accent },
+  specialSetBtnText: { color: '#aaa', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  specialSetBtnTextDone: { color: THEME.accent },
   activeSetRow: { backgroundColor: 'rgba(204, 255, 0, 0.05)', borderRadius: 8, padding: 8 },
   warmupSetRow: { borderLeftWidth: 3, borderLeftColor: '#666', backgroundColor: 'rgba(100, 100, 100, 0.08)', padding: 8, borderRadius: 6 },
   warmupSetLabel: { color: '#888', fontSize: 10 },
