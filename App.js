@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable, Share, Vibration } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Keyboard, Animated, Modal, Pressable, Share, Vibration } from 'react-native';
 import * as Speech from 'expo-speech';
 import { Ionicons } from '@expo/vector-icons';
 import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
@@ -199,14 +199,52 @@ const getNextAbType = (lastType) => {
 
 const shouldInjectAbWorkout = (lastAbDate) => getDaysSince(lastAbDate) >= 4;
 
-const formatWorkoutForShare = (type, variation, exercises) => {
+const formatWorkoutForShare = (type, variation, exercises, inputs, injectedWarmups, substitutions, subSetCount) => {
   const header = `🦍 Today's Ape Workout: ${type} (${variation})`;
   const lines = (exercises || []).map((ex) => {
-    const name = ex.exercise || 'Exercise';
-    const setCount = Array.isArray(ex.sets) ? ex.sets.length : 0;
-    const reps = ex.targetReps ?? ex.sets?.[0]?.reps ?? '';
-    const repsLabel = reps ? (String(reps).toLowerCase() === 'fail' ? `${setCount} sets × fail` : `${setCount} sets × ${reps} reps`) : `${setCount} sets`;
-    return `🔸 ${name}\n${repsLabel}`;
+    const name = (substitutions && substitutions[ex.exercise]) || ex.exercise || 'Exercise';
+    const warmups = injectedWarmups?.[ex.exercise] || [];
+    const warmUpCount = warmups.length;
+    const workingSetCount = substitutions?.[ex.exercise] ? (subSetCount?.[ex.exercise] ?? 1) : (ex.sets || []).length;
+    const setIndices = Array.from({ length: warmUpCount + workingSetCount }, (_, i) => i);
+
+    const warmUpParts = [];
+    const workingParts = [];
+    setIndices.forEach((setIdx) => {
+      const isWarmup = setIdx < warmUpCount;
+      const fromInputs = inputs?.[ex.exercise]?.sets?.[setIdx];
+      let weight = fromInputs?.weight;
+      let reps = fromInputs?.reps;
+      const modifier = fromInputs?.modifier;
+      if (isWarmup) {
+        if (weight == null && reps == null && warmups[setIdx]) {
+          weight = warmups[setIdx].weight;
+          reps = warmups[setIdx].reps;
+        }
+        const w = weight === 'BW' || weight === '' || weight == null ? 'BW' : String(weight);
+        const r = reps != null && String(reps).trim() !== '' ? String(reps) : '';
+        if (w || r) warmUpParts.push(r ? `${w}×${r}` : w);
+      } else {
+        if (modifier === 'drop') workingParts.push('Dropset');
+        else if (modifier === 'negative') workingParts.push('Negative');
+        else {
+          const w = weight === 'BW' || weight === '' || weight == null ? '0' : String(weight);
+          const r = reps != null && String(reps).trim() !== '' ? String(reps) : '0';
+          workingParts.push(`${w}×${r}`);
+        }
+      }
+    });
+
+    const parts = [];
+    if (warmUpParts.length > 0) parts.push(`Warm-up: ${warmUpParts.join(', ')}`);
+    if (workingParts.length > 0) parts.push(`Working: ${workingParts.join(', ')}`);
+    if (parts.length === 0) {
+      const setCount = workingSetCount;
+      const reps = ex.targetReps ?? ex.sets?.[0]?.reps ?? '';
+      const repsLabel = reps ? (String(reps).toLowerCase() === 'fail' ? `${setCount} sets × fail` : `${setCount} sets × ${reps} reps`) : `${setCount} sets`;
+      return `🔸 ${name}\n${repsLabel}`;
+    }
+    return `🔸 ${name}\n${parts.join('\n')}`;
   });
   return [header, '', ...lines].join('\n');
 };
@@ -291,7 +329,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -305,59 +343,8 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [newExerciseName, setNewExerciseName] = useState('');
   const [shoulderWarmupDone, setShoulderWarmupDone] = useState(false);
   const [injectedWarmups, setInjectedWarmups] = useState({}); // { exerciseName: [ { weight, reps }, ... ] }
-  const [restTimerSeconds, setRestTimerSeconds] = useState(null);
-  const [isTimerMuted, setIsTimerMuted] = useState(false);
-  const restTimerRef = useRef(null);
-  const restTimerIntervalRef = useRef(null);
-  const isTimerMutedRef = useRef(false);
   const inputsRef = useRef(inputs);
   useEffect(() => { inputsRef.current = inputs; }, [inputs]);
-  useEffect(() => { isTimerMutedRef.current = isTimerMuted; }, [isTimerMuted]);
-
-  const cancelRestTimer = () => {
-    if (restTimerIntervalRef.current) {
-      clearInterval(restTimerIntervalRef.current);
-      restTimerIntervalRef.current = null;
-    }
-    stopTimerSpeech();
-    restTimerRef.current = null;
-    setRestTimerSeconds(null);
-  };
-
-  const startRestTimer = () => {
-    if (restTimerIntervalRef.current) {
-      clearInterval(restTimerIntervalRef.current);
-      restTimerIntervalRef.current = null;
-    }
-    restTimerRef.current = 60;
-    setRestTimerSeconds(60);
-    restTimerIntervalRef.current = setInterval(() => {
-      restTimerRef.current = restTimerRef.current - 1;
-      const s = restTimerRef.current;
-      if (!isTimerMutedRef.current) {
-        if (s === 30) speakTimer('30 seconds');
-        if (s === 10) speakTimer('10 seconds');
-      }
-      if (s <= 0) {
-        if (!isTimerMutedRef.current) {
-          speakTimer('Time to lift!');
-          if (Platform.OS !== 'web') Vibration.vibrate(400);
-        }
-        clearInterval(restTimerIntervalRef.current);
-        restTimerIntervalRef.current = null;
-        restTimerRef.current = null;
-        setRestTimerSeconds(null);
-        return;
-      }
-      setRestTimerSeconds(s);
-    }, 1000);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (initialType) setTodaysType(initialType);
@@ -784,8 +771,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     );
   }
 
-  const restTimerFormatted = restTimerSeconds != null ? `${Math.floor(restTimerSeconds / 60)}:${String(restTimerSeconds % 60).padStart(2, '0')}` : '';
-
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={{ flex: 1 }}>
@@ -845,7 +830,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           <TouchableOpacity
             style={[styles.subBtn, styles.shareBtn, { marginBottom: 12 }]}
             onPress={() => {
-              const message = formatWorkoutForShare(todaysType, variation, exercisesToShow);
+              const message = formatWorkoutForShare(todaysType, variation, exercisesToShow, inputs, injectedWarmups, substitutions, subSetCount);
               Share.share({ message });
             }}
           >
@@ -1231,39 +1216,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           <Text style={styles.finishText}>FINISH ✓</Text>
         </TouchableOpacity>
       </ScrollView>
-      {restTimerSeconds != null && (
-        <View style={styles.restTimerBar}>
-          <Text style={styles.restTimerText}>{restTimerFormatted}</Text>
-          <View style={styles.restTimerButtons}>
-            <TouchableOpacity style={styles.restTimerMuteBtn} onPress={() => setIsTimerMuted(m => !m)}>
-              <Ionicons name={isTimerMuted ? 'volume-mute' : 'volume-high'} size={22} color={isTimerMuted ? '#888' : THEME.accent} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.restTimerBtn} onPress={() => {
-              const next = Math.max(0, restTimerSeconds - 30);
-              restTimerRef.current = next;
-              setRestTimerSeconds(next > 0 ? next : null);
-              if (next <= 0) {
-                if (!isTimerMutedRef.current) {
-                  speakTimer('Time to lift!');
-                  if (Platform.OS !== 'web') Vibration.vibrate(400);
-                }
-                cancelRestTimer();
-              }
-            }}>
-              <Text style={styles.restTimerBtnText}>−30s</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.restTimerBtn} onPress={() => {
-              restTimerRef.current = restTimerSeconds + 30;
-              setRestTimerSeconds(restTimerSeconds + 30);
-            }}>
-              <Text style={styles.restTimerBtnText}>+30s</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.restTimerBtn, styles.restTimerSkipBtn]} onPress={cancelRestTimer}>
-              <Text style={styles.restTimerSkipBtnText}>Skip</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -1606,6 +1558,73 @@ export default function App() {
   const [lastCompletedWorkout, setLastCompletedWorkout] = useState(null);
   const [totalTonnage, setTotalTonnage] = useState(null);
   const [todayProgress, setTodayProgress] = useState(null);
+  const [restTimerSeconds, setRestTimerSeconds] = useState(null);
+  const [isTimerMuted, setIsTimerMuted] = useState(false);
+  const restTimerRef = useRef(null);
+  const restTimerIntervalRef = useRef(null);
+  const isTimerMutedRef = useRef(false);
+
+  const TAB_BAR_HEIGHT = 52;
+
+  const stickyBottomAnim = useRef(new Animated.Value(TAB_BAR_HEIGHT)).current;
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+      const h = e.endCoordinates?.height ?? 0;
+      const duration = e.duration ?? (Platform.OS === 'ios' ? 250 : 100);
+      Animated.timing(stickyBottomAnim, { toValue: h, duration, useNativeDriver: false }).start();
+    });
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', (e) => {
+      const duration = e.duration ?? (Platform.OS === 'ios' ? 250 : 100);
+      Animated.timing(stickyBottomAnim, { toValue: TAB_BAR_HEIGHT, duration, useNativeDriver: false }).start();
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, [stickyBottomAnim]);
+
+  useEffect(() => { isTimerMutedRef.current = isTimerMuted; }, [isTimerMuted]);
+
+  const cancelRestTimer = () => {
+    if (restTimerIntervalRef.current) {
+      clearInterval(restTimerIntervalRef.current);
+      restTimerIntervalRef.current = null;
+    }
+    stopTimerSpeech();
+    restTimerRef.current = null;
+    setRestTimerSeconds(null);
+  };
+
+  const startRestTimer = () => {
+    if (restTimerIntervalRef.current) {
+      clearInterval(restTimerIntervalRef.current);
+      restTimerIntervalRef.current = null;
+    }
+    restTimerRef.current = 60;
+    setRestTimerSeconds(60);
+    restTimerIntervalRef.current = setInterval(() => {
+      restTimerRef.current = restTimerRef.current - 1;
+      const s = restTimerRef.current;
+      if (!isTimerMutedRef.current) {
+        if (s === 30) speakTimer('30 seconds');
+        if (s === 10) speakTimer('10 seconds');
+      }
+      if (s <= 0) {
+        if (!isTimerMutedRef.current) {
+          speakTimer('Time to lift!');
+          if (Platform.OS !== 'web') Vibration.vibrate(400);
+        }
+        clearInterval(restTimerIntervalRef.current);
+        restTimerIntervalRef.current = null;
+        restTimerRef.current = null;
+        setRestTimerSeconds(null);
+        return;
+      }
+      setRestTimerSeconds(s);
+    }, 1000);
+  };
+
+  useEffect(() => {
+    return () => { if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current); };
+  }, []);
 
   useEffect(() => { loadData(); }, []);
 
@@ -1732,21 +1751,52 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} /> : <HistoryScreen history={history} />}</View>
-        {tab === 'Today' && todayProgress != null && todayProgress.completed >= 1 ? (
-          <>
-            <View style={styles.progressBarStickyWrap}>
-              <View style={styles.progressBarStickyRow}>
-                <Text style={[styles.progressBarStickyText, todayProgress.isComplete && styles.progressBarTextComplete]} numberOfLines={1}>
-                  {todayProgress.isComplete ? 'Done' : `${todayProgress.pct}% Complete`}
-                </Text>
-                <View style={[styles.progressBarTrack, todayProgress.isComplete && styles.progressBarTrackComplete, styles.progressBarTrackSticky]}>
-                  <View style={[styles.progressBarFill, { width: `${todayProgress.pct}%` }, todayProgress.isComplete && styles.progressBarFillComplete]} />
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} /> : <HistoryScreen history={history} />}</View>
+        {tab === 'Today' && (restTimerSeconds != null || (todayProgress != null && todayProgress.completed >= 1)) ? (
+          <Animated.View style={[styles.stickyBottomWrap, { bottom: stickyBottomAnim }]}>
+            {restTimerSeconds != null ? (
+              <View style={styles.restTimerBar}>
+                <Text style={styles.restTimerText}>{`${Math.floor(restTimerSeconds / 60)}:${String(restTimerSeconds % 60).padStart(2, '0')}`}</Text>
+                <View style={styles.restTimerButtons}>
+                  <TouchableOpacity style={styles.restTimerMuteBtn} onPress={() => setIsTimerMuted(m => !m)}>
+                    <Ionicons name={isTimerMuted ? 'volume-mute' : 'volume-high'} size={22} color={isTimerMuted ? '#888' : THEME.accent} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.restTimerBtn} onPress={() => {
+                    const next = Math.max(0, restTimerSeconds - 30);
+                    restTimerRef.current = next;
+                    setRestTimerSeconds(next > 0 ? next : null);
+                    if (next <= 0) {
+                      if (!isTimerMutedRef.current) { speakTimer('Time to lift!'); if (Platform.OS !== 'web') Vibration.vibrate(400); }
+                      cancelRestTimer();
+                    }
+                  }}>
+                    <Text style={styles.restTimerBtnText}>−30s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.restTimerBtn} onPress={() => { restTimerRef.current = restTimerSeconds + 30; setRestTimerSeconds(restTimerSeconds + 30); }}>
+                    <Text style={styles.restTimerBtnText}>+30s</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.restTimerBtn, styles.restTimerSkipBtn]} onPress={cancelRestTimer}>
+                    <Text style={styles.restTimerSkipBtnText}>Skip</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </View>
-            <View style={styles.progressBarDivider} />
-          </>
+            ) : null}
+            {todayProgress != null && todayProgress.completed >= 1 ? (
+              <>
+                <View style={styles.progressBarStickyWrap}>
+                  <View style={styles.progressBarStickyRow}>
+                    <Text style={[styles.progressBarStickyText, todayProgress.isComplete && styles.progressBarTextComplete]} numberOfLines={1}>
+                      {todayProgress.isComplete ? 'Done' : `${todayProgress.pct}% Complete`}
+                    </Text>
+                    <View style={[styles.progressBarTrack, todayProgress.isComplete && styles.progressBarTrackComplete, styles.progressBarTrackSticky]}>
+                      <View style={[styles.progressBarFill, { width: `${todayProgress.pct}%` }, todayProgress.isComplete && styles.progressBarFillComplete]} />
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.progressBarDivider} />
+              </>
+            ) : null}
+          </Animated.View>
         ) : null}
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
@@ -1845,6 +1895,7 @@ const styles = StyleSheet.create({
   restTimerSkipBtn: { backgroundColor: 'transparent', borderColor: '#555' },
   restTimerSkipBtnText: { color: '#888', fontSize: 14, fontWeight: '600' },
   tabBar: { flexDirection: 'row', borderTopWidth: 1, borderColor: '#222', backgroundColor: '#000', paddingTop: 8, paddingBottom: 8 },
+  stickyBottomWrap: { position: 'absolute', left: 0, right: 0, backgroundColor: '#000' },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   tabText: { color: '#666', fontWeight: 'bold' },
   searchBar: { backgroundColor: '#111', color: '#fff', padding: 15, margin: 20, borderRadius: 8, borderWidth: 1, borderColor: '#222', fontWeight: 'bold', fontSize: 16 },
