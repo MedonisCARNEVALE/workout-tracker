@@ -136,7 +136,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout }) => {
+const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -288,6 +288,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   };
 
   const save = (abs) => {
+    const completedAt = new Date().toISOString();
     const logs = Object.keys(inputs).map(name => {
       const ex = inputs[name] || {};
       const setArray = Object.keys(ex.sets || {}).sort().map(idx => {
@@ -297,6 +298,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
       const loggedName = substitutions[name] ?? name;
       return {
         date: format(new Date(), 'MM/dd/yy'),
+        completedAt,
         exercise: loggedName,
         notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : "") + (abs ? " (Abs Done)" : ""),
         weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ""),
@@ -328,6 +330,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         const setArray = sets.map(s => `${s.weight || 0}x${s.reps || 0}`);
         logs.push({
           date: format(new Date(), 'MM/dd/yy'),
+          completedAt,
           exercise: substitutions[abItem.exercise] ?? abItem.exercise,
           notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : ''),
           weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
@@ -339,8 +342,22 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     setInputs({});
     setSubstitutions({});
     setSubSetCount({});
-    Alert.alert("Success", "2026 Log Saved.");
   };
+
+  if (showSuccessScreen) {
+    return (
+      <View style={[styles.container, styles.successContainer]}>
+        <Text style={styles.successTitle}>Workout complete</Text>
+        <Text style={styles.successMessage}>2026 Log Saved.</Text>
+        <TouchableOpacity style={styles.successPrimaryBtn} onPress={onDismissSuccess}>
+          <Text style={styles.successPrimaryBtnText}>Done</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.successSecondaryBtn} onPress={onStartTwoADay}>
+          <Text style={styles.successSecondaryBtnText}>Start Another Session (Two-a-Day)</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -923,9 +940,17 @@ const HistoryScreen = ({ history }) => {
   const sessions = useMemo(() => {
     const filtered = history.filter(h => h.date && searchMatchesLog(search, h));
     const map = {};
-    filtered.forEach(h => { if (!map[h.date]) map[h.date] = { date: h.date, data: [] }; map[h.date].data.push(h); });
+    filtered.forEach((h) => {
+      const sessionKey = h.completedAt ? `${h.date}|${h.completedAt}` : `${h.date}|legacy`;
+      if (!map[sessionKey]) map[sessionKey] = { date: h.date, completedAt: h.completedAt, data: [] };
+      map[sessionKey].data.push(h);
+    });
     const list = Object.values(map);
-    list.sort((a, b) => parseWorkoutDate(b.date) - parseWorkoutDate(a.date));
+    list.sort((a, b) => {
+      const timeA = a.completedAt ? new Date(a.completedAt).getTime() : parseWorkoutDate(a.date);
+      const timeB = b.completedAt ? new Date(b.completedAt).getTime() : parseWorkoutDate(b.date);
+      return timeB - timeA;
+    });
     return list;
   }, [history, search]);
 
@@ -934,10 +959,14 @@ const HistoryScreen = ({ history }) => {
       <TextInput style={styles.searchBar} placeholder="Search history..." placeholderTextColor="#666" onChangeText={setSearch} />
       <FlatList
         data={sessions}
-        keyExtractor={(item, index) => `hist-${index}`}
+        keyExtractor={(item, index) => `hist-${item.date}-${item.completedAt || 'legacy'}-${index}`}
         renderItem={({ item }) => (
           <View style={styles.sessionCard}>
-            <Text style={styles.sessionHeader}>{item.date.toUpperCase()}{item.data?.[0]?.type ? ` · ${item.data[0].type.toUpperCase()}` : ''}</Text>
+            <Text style={styles.sessionHeader}>
+              {item.date.toUpperCase()}
+              {item.completedAt ? ` · ${format(new Date(item.completedAt), 'h:mm a')}` : ''}
+              {item.data?.[0]?.type ? ` · ${item.data[0].type.toUpperCase()}` : ''}
+            </Text>
             {item.data.map((log, i) => (
               <View key={i} style={styles.logLine}>
                 <Text style={styles.logExercise}>{log.exercise}</Text>
@@ -961,6 +990,7 @@ export default function App() {
   const [overrides, setOverrides] = useState({});
   const [abTemplates, setAbTemplates] = useState(DEFAULT_AB_TEMPLATES);
   const [lastAbWorkout, setLastAbWorkout] = useState(null); // { date, type } or null
+  const [showSuccessScreen, setShowSuccessScreen] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -1022,6 +1052,7 @@ export default function App() {
       const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
       const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
       setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+      setShowSuccessScreen(true);
       // If this workout was from an override, set its source to today's date for next time
       if (logs.length > 0 && overrides[completed.type]?.[completed.variation]) {
         const completionDate = logs[0].date;
@@ -1059,7 +1090,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={() => setShowSuccessScreen(false)} onStartTwoADay={() => setShowSuccessScreen(false)} /> : <HistoryScreen history={history} />}</View>
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
@@ -1071,6 +1102,13 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
+  successContainer: { justifyContent: 'center', alignItems: 'center', padding: 24 },
+  successTitle: { color: '#fff', fontSize: 28, fontWeight: '900', marginBottom: 8 },
+  successMessage: { color: THEME.dim, fontSize: 16, marginBottom: 32 },
+  successPrimaryBtn: { backgroundColor: THEME.accent, paddingVertical: 16, paddingHorizontal: 48, borderRadius: 12, marginBottom: 16, minWidth: 200, alignItems: 'center' },
+  successPrimaryBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
+  successSecondaryBtn: { paddingVertical: 16, paddingHorizontal: 24, borderRadius: 12, borderWidth: 2, borderColor: THEME.accent, minWidth: 200, alignItems: 'center' },
+  successSecondaryBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold' },
   scroll: { padding: 20, paddingBottom: 100 },
   title: { color: '#fff', fontSize: 32, fontWeight: '900', fontStyle: 'italic', marginBottom: 20 },
   row: { flexDirection: 'row', gap: 15, marginBottom: 20 },
