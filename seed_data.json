@@ -855,7 +855,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Can probly do another bicep exercise."
@@ -1014,7 +1014,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1101,7 +1101,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1278,7 +1278,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1423,7 +1423,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1452,7 +1452,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1611,7 +1611,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1701,7 +1701,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect. Go up to 100."
@@ -1846,7 +1846,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -1875,7 +1875,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -2034,7 +2034,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -2137,7 +2137,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -2208,7 +2208,7 @@
             {
                 "set_number": 5,
                 "weight": 70.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Don't know weight yet. 70 on each side."
@@ -2237,7 +2237,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -2266,7 +2266,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -2510,7 +2510,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Hard af."
@@ -2539,7 +2539,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "on each side. Go 60 next week."
@@ -2640,7 +2640,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "low row machine for now. 60 each. Perfect."
@@ -2876,7 +2876,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Hard af"
@@ -2905,7 +2905,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "on each side. Go 60 next week."
@@ -3242,7 +3242,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Trying 60. Hard af"
@@ -3271,7 +3271,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Trying 45. Too easy. Went to 55"
@@ -3358,7 +3358,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect"
@@ -3387,7 +3387,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Trying 45. Too easy. Went to 55"
@@ -3450,7 +3450,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect"
@@ -3484,7 +3484,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect. See how it feels next week. Did tris 2 days ago"
@@ -3518,7 +3518,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20 then maybe try moving up. 20 might be fine this late in the workout too."
@@ -3901,7 +3901,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect"
@@ -3930,7 +3930,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -4059,7 +4059,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -4136,7 +4136,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Perfect. Try 40 next time?"
@@ -4170,7 +4170,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -4204,7 +4204,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20"
@@ -4310,7 +4310,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Trying 60. Hard af"
@@ -4479,7 +4479,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20"
@@ -4585,7 +4585,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Trying 60. Perfect. Try 65."
@@ -4754,7 +4754,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20"
@@ -4855,7 +4855,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "PERFECT"
@@ -5024,7 +5024,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20"
@@ -5125,7 +5125,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "free weight this time. PERFECT on machine. Trying 60 on bb"
@@ -5294,7 +5294,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20"
@@ -5395,7 +5395,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "free weight this time. going 70 this week."
@@ -5775,7 +5775,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "free weight this time. going 70 this week."
@@ -5886,7 +5886,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 70 this week."
@@ -5981,7 +5981,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 70 this week."
@@ -6204,7 +6204,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 70 this week."
@@ -6328,7 +6328,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 80 this week"
@@ -6697,7 +6697,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 80 this week"
@@ -6941,7 +6941,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "rope curl pulls this week, preacher machine blocked off. going 80 this week"
@@ -7297,7 +7297,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "25 too heavy. Go one more week at 20 then maybe try moving up. 20 might be fine this late in the workout too."
@@ -7379,7 +7379,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "free weight this time. going 75"
@@ -7460,7 +7460,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -7545,7 +7545,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -7578,7 +7578,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -7660,7 +7660,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "going 70"
@@ -7761,7 +7761,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -7790,7 +7790,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Pretty Fuckin hard"
@@ -7885,7 +7885,7 @@
             {
                 "set_number": 4,
                 "weight": 50.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -8010,7 +8010,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Pretty Fuckin hard"
@@ -8441,7 +8441,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             },
             {
                 "set_number": 5,
@@ -8513,7 +8513,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -8561,7 +8561,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -8670,7 +8670,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "70 on machine"
@@ -8841,7 +8841,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Start with 120 next time"
@@ -8889,7 +8889,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -8945,7 +8945,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -9039,7 +9039,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -9143,7 +9143,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "50 only today, sore forearms"
@@ -9247,12 +9247,12 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             },
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -9305,7 +9305,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -9382,7 +9382,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Try 115 all way through next"
@@ -9478,7 +9478,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Weak this week"
@@ -10035,7 +10035,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "55 each side"
@@ -10657,7 +10657,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "moving up to 70"
@@ -10872,7 +10872,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "hard af"
@@ -11016,7 +11016,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -11235,7 +11235,7 @@
             {
                 "set_number": 5,
                 "weight": 70.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "each side"
@@ -11992,7 +11992,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -12138,7 +12138,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -12180,7 +12180,7 @@
             {
                 "set_number": 5,
                 "weight": 70.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "each side"
@@ -12870,7 +12870,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -14863,7 +14863,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -15117,7 +15117,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "Best pump in a year"
@@ -15251,7 +15251,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -15505,7 +15505,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -15731,7 +15731,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "no spotter"
@@ -15856,7 +15856,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -16220,7 +16220,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -16444,7 +16444,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -16856,7 +16856,7 @@
             {
                 "set_number": 2,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "light today"
@@ -17480,7 +17480,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -17533,7 +17533,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -17795,7 +17795,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -18062,7 +18062,7 @@
             {
                 "set_number": 2,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -18096,7 +18096,7 @@
             {
                 "set_number": 5,
                 "weight": 27.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -18591,7 +18591,12 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
+            },
+            {
+                "set_number": 5,
+                "weight": null,
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -18634,7 +18639,7 @@
             {
                 "set_number": 2,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "",
@@ -18669,7 +18674,7 @@
             {
                 "set_number": 5,
                 "weight": 27.0,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -18751,7 +18756,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "perfect"
@@ -18900,7 +18905,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "go 125 next"
@@ -19068,7 +19073,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "perfect"
@@ -19217,7 +19222,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "go 125 next"
@@ -21527,7 +21532,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "moving up to 70"
@@ -21609,7 +21614,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -21915,7 +21920,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -22206,7 +22211,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -22336,7 +22341,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -22626,7 +22631,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -22756,7 +22761,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -23065,7 +23070,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "shoulders light light"
@@ -23262,7 +23267,7 @@
             {
                 "set_number": 5,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "shoulders light light"
@@ -23421,7 +23426,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "single leg"
@@ -23575,7 +23580,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "single leg"
@@ -23839,7 +23844,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "single leg"
@@ -23950,7 +23955,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -23974,7 +23979,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "single leg"
@@ -24085,7 +24090,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -24109,7 +24114,7 @@
             {
                 "set_number": 3,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "single leg"
@@ -24186,7 +24191,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "perfect"
@@ -24716,7 +24721,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "145 next time"
@@ -24834,7 +24839,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "go 145 next"
@@ -24952,7 +24957,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "go 145 next"
@@ -26580,7 +26585,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "side ways when tired"
@@ -26894,7 +26899,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -27136,7 +27141,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": ""
@@ -27165,7 +27170,7 @@
             {
                 "set_number": 4,
                 "weight": null,
-                "reps": "Dropset"
+                "reps": "Dropset", "modifier": "drop"
             }
         ],
         "note": "drop on 20"

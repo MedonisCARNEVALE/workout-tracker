@@ -28,36 +28,6 @@ const stopTimerSpeech = () => {
   }
 };
 
-const BAR_WEIGHT = 45;
-const PLATES = [45, 35, 25, 10, 5, 2.5];
-
-const getPlateCombination = (totalLbs) => {
-  const n = parseFloat(String(totalLbs).replace(/[^0-9.]/g, ''), 10);
-  if (isNaN(n) || n < BAR_WEIGHT) return null;
-  if (n === BAR_WEIGHT) return { total: n, plates: [], perSide: 0 };
-  let perSide = (n - BAR_WEIGHT) / 2;
-  perSide = Math.round(perSide / 2.5) * 2.5;
-  if (perSide <= 0) return { total: BAR_WEIGHT, plates: [], perSide: 0 };
-  const result = [];
-  let remaining = perSide;
-  for (const p of PLATES) {
-    while (remaining >= p - 0.01) {
-      result.push(p);
-      remaining -= p;
-    }
-  }
-  const actualTotal = BAR_WEIGHT + result.reduce((a, b) => a + b, 0) * 2;
-  return { total: actualTotal, plates: result, perSide };
-};
-
-const formatPlateAlert = (totalLbs) => {
-  const combo = getPlateCombination(totalLbs);
-  if (!combo) return 'Enter a weight (at least 45 lbs for the bar).';
-  if (combo.plates.length === 0) return `For ${combo.total} lbs: Just the bar — no plates.`;
-  const list = combo.plates.map(p => `[ ${p} ]`).join(' ');
-  return `For ${combo.total} lbs, load ONE side with: ${list}`;
-};
-
 const parseNotesToSets = (notes) => {
   const part = String(notes || '').split('|')[0].trim();
   return part.split(',').map(s => s.trim()).filter(Boolean).map(segment => {
@@ -68,11 +38,36 @@ const parseNotesToSets = (notes) => {
   });
 };
 
+// Normalize a set from seed or override to { weight, reps, modifier } (modifier: null | 'drop' | 'negative')
+const normalizeSet = (s) => {
+  if (!s || typeof s !== 'object') return { weight: '', reps: '', modifier: null };
+  const repsRaw = s.reps != null ? String(s.reps).trim() : '';
+  const isDropset = repsRaw.toLowerCase() === 'dropset' || repsRaw === 'Drop';
+  const isNegative = repsRaw.toLowerCase() === 'negative' || repsRaw === 'Neg';
+  let modifier = s.modifier ?? null;
+  if (modifier !== 'drop' && modifier !== 'negative') modifier = isDropset ? 'drop' : isNegative ? 'negative' : null;
+  const weight = s.weight != null ? String(s.weight) : '';
+  const reps = modifier ? '' : (repsRaw === 'Dropset' || repsRaw === 'Negative' ? '' : repsRaw);
+  return { weight, reps: reps === '' && !modifier ? '' : reps, modifier };
+};
+
+const normalizeExerciseSets = (ex) => {
+  if (!ex) return ex;
+  const sets = ex.sets;
+  if (!Array.isArray(sets)) return { ...ex, sets: [{ weight: '', reps: '', modifier: null }] };
+  const normalized = sets.map(normalizeSet);
+  return { ...ex, sets: normalized };
+};
+
+const normalizeExerciseName = (name) => (name || '').trim().toLowerCase();
+
 const getLastLogForExercise = (history, exerciseName) => {
   const notesStr = (log) => String(log.notes || log.note || '');
+  const key = normalizeExerciseName(exerciseName);
+  if (!key) return null;
   const matches = (history || []).filter(
     (log) =>
-      (log.exercise || '').trim() === (exerciseName || '').trim() &&
+      normalizeExerciseName(log.exercise) === key &&
       notesStr(log).includes('x')
   );
   if (matches.length === 0) return null;
@@ -96,7 +91,7 @@ const allSetsMetTarget = (sets, targetReps) => {
 const getMaxWeightByExercise = (history) => {
   const map = {};
   (history || []).forEach((log) => {
-    const name = (log.exercise || '').trim();
+    const name = normalizeExerciseName(log.exercise);
     if (!name || !log.notes) return;
     const sets = parseNotesToSets(log.notes);
     if (!sets.length) return;
@@ -284,6 +279,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [substitutions, setSubstitutions] = useState({}); // { originalName: 'Replacement name' } - session only
   const [subSetCount, setSubSetCount] = useState({}); // { originalName: number } - sets count when subbed (today only)
   const [subbingFor, setSubbingFor] = useState(null);
+  const [subModifier, setSubModifier] = useState(null);
   const [subInputValue, setSubInputValue] = useState('');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercises, setEditingExercises] = useState([]);
@@ -358,10 +354,11 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     const overrideData = overrides?.[todaysType]?.[variation];
     const overrideExercises = overrideData?.exercises;
     if (overrideExercises?.length) {
+      const exercises = overrideExercises.map(normalizeExerciseSets);
       return {
         type: todaysType === 'Legs' ? 'Heavy Legs and Shoulders' : todaysType,
         date: overrideData?.lastCompletedDate ?? 'Custom',
-        exercises: overrideExercises,
+        exercises,
       };
     }
     // Special handling for Legs day
@@ -396,9 +393,9 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           exercise: 'Marty St Louis',
           note: originalMarty?.note || '',
           sets: [
-            { weight: '', reps: '' },
-            { weight: '', reps: '' },
-            { weight: '', reps: '' },
+            { weight: '', reps: '', modifier: null },
+            { weight: '', reps: '', modifier: null },
+            { weight: '', reps: '', modifier: null },
           ],
         };
 
@@ -406,7 +403,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           type: 'KOT',
           date: targetDate,
           // Marty first, then the rest (no duplicate)
-          exercises: [martyExercise, ...otherExercises],
+          exercises: [martyExercise, ...otherExercises.map(normalizeExerciseSets)],
         };
       }
 
@@ -421,7 +418,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
       return {
         type: 'Heavy Legs and Shoulders',
         date: targetDate,
-        exercises: heavySessions.filter((d) => d.date === targetDate),
+        exercises: heavySessions.filter((d) => d.date === targetDate).map(normalizeExerciseSets),
       };
     }
 
@@ -444,7 +441,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     return {
       type: filtered[0]?.type || searchKey,
       date: targetDate,
-      exercises: filtered,
+      exercises: filtered.map(normalizeExerciseSets),
     };
   }, [todaysType, variation, overrides]);
 
@@ -493,6 +490,44 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   );
 
   const maxWeightByExercise = useMemo(() => getMaxWeightByExercise(history), [history]);
+
+  const lastLogByExercise = useMemo(() => {
+    const m = {};
+    (exercisesToShow || []).forEach((item) => {
+      const name = item.exercise || '';
+      if (!name) return;
+      const lookupName = substitutions[item.exercise] || item.exercise;
+      const log = getLastLogForExercise(history, lookupName);
+      if (!log) return;
+      m[name] = { log, sets: parseNotesToSets(log.notes || '') };
+    });
+    return m;
+  }, [history, exercisesToShow, substitutions]);
+
+  const globalActivePosition = useMemo(() => {
+    for (let exIdx = 0; exIdx < exercisesToShow.length; exIdx++) {
+      const item = exercisesToShow[exIdx];
+      const isSubbed = !!substitutions[item.exercise];
+      const warmUpCount = (injectedWarmups[item.exercise] || []).length;
+      const workingSetCount = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
+      const effectiveSetIndices = Array.from({ length: warmUpCount + workingSetCount }, (_, i) => i);
+      for (const setIdx of effectiveSetIndices) {
+        const setMod = inputs[item.exercise]?.sets?.[setIdx]?.modifier ?? (item.sets || [])[setIdx - warmUpCount]?.modifier ?? null;
+        const isSpecial = setMod === 'drop' || setMod === 'negative';
+        const w = inputs[item.exercise]?.sets?.[setIdx]?.weight;
+        const r = inputs[item.exercise]?.sets?.[setIdx]?.reps;
+        const hasWeight = w != null && String(w).trim() !== '';
+        const hasReps = r != null && String(r).trim() !== '';
+        if (isSpecial) {
+          if (r !== '✓') return { exIdx, setIdx };
+        } else {
+          if (!hasWeight || !hasReps) return { exIdx, setIdx };
+        }
+      }
+    }
+    return null;
+  }, [exercisesToShow, inputs, substitutions, subSetCount, injectedWarmups]);
+
   const [prSetKeys, setPrSetKeys] = useState({}); // { 'exerciseName-setIdx': true }
   const prSetKeysRef = useRef({});
   useEffect(() => { prSetKeysRef.current = prSetKeys; }, [prSetKeys]);
@@ -570,12 +605,35 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     }));
   };
 
+  const getSetModifier = (item, setIdx, warmUpCount, isSubbed) => {
+    if (setIdx < warmUpCount) return null;
+    const inputMod = inputs[item.exercise]?.sets?.[setIdx]?.modifier;
+    if (inputMod === 'drop' || inputMod === 'negative') return inputMod;
+    const templateSet = (item.sets || [])[setIdx - warmUpCount];
+    return templateSet?.modifier ?? null;
+  };
+
+  const getExerciseSetSummary = (item, isSubbed) => {
+    const workingSets = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
+    if (workingSets === 0) return '';
+    const hasDrop = isSubbed ? (inputs[item.exercise]?.sets && Object.values(inputs[item.exercise].sets).some(s => s?.modifier === 'drop')) : (item.sets || []).some(s => s?.modifier === 'drop');
+    const hasNeg = isSubbed ? (inputs[item.exercise]?.sets && Object.values(inputs[item.exercise].sets).some(s => s?.modifier === 'negative')) : (item.sets || []).some(s => s?.modifier === 'negative');
+    const parts = [];
+    if (hasDrop) parts.push('Drop');
+    if (hasNeg) parts.push('Neg');
+    const suffix = parts.length ? ` (+${parts.join(', +')})` : '';
+    return ` - ${workingSets} set${workingSets !== 1 ? 's' : ''}${suffix}`;
+  };
+
   const save = (abs) => {
     const completedAt = new Date().toISOString();
     const logs = Object.keys(inputs).map(name => {
       const ex = inputs[name] || {};
       const setArray = Object.keys(ex.sets || {}).sort().map(idx => {
         const s = ex.sets[idx];
+        const mod = s?.modifier;
+        if (mod === 'drop') return 'Dropset';
+        if (mod === 'negative') return 'Negative';
         return `${s.weight || 0}x${s.reps || 0}`;
       });
       const loggedName = substitutions[name] ?? name;
@@ -706,7 +764,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         <View style={styles.editShareRow}>
           <TouchableOpacity style={[styles.subBtn, { marginBottom: 12 }]} onPress={() => {
             setEditingExercises(currentWorkout.exercises.map(e => {
-              const sets = e.sets?.map(s => ({ weight: s.weight ?? '', reps: String(s.reps ?? '').trim() || '' })) ?? [{ weight: '', reps: '' }];
+              const sets = e.sets?.map(s => ({ weight: s.weight ?? '', reps: String(s.reps ?? '').trim() || '', modifier: s.modifier ?? null })) ?? [{ weight: '', reps: '', modifier: null }];
               return { ...e, sets, targetReps: e.targetReps ?? '' };
             }));
             setNewExerciseName('');
@@ -776,7 +834,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           <Text style={styles.stepperBtnText}>−</Text>
                         </TouchableOpacity>
                         <Text style={styles.stepperValue}>{ex.sets.length}</Text>
-                        <TouchableOpacity style={styles.stepperBtn} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: [...e.sets, { weight: '', reps: e.targetReps || '' }] } : e))}>
+                        <TouchableOpacity style={styles.stepperBtn} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: [...e.sets, { weight: '', reps: e.targetReps || '', modifier: null }] } : e))}>
                           <Text style={styles.stepperBtnText}>+</Text>
                         </TouchableOpacity>
                       </View>
@@ -791,6 +849,24 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           keyboardType="number-pad"
                         />
                       </View>
+                    </View>
+                    <View style={styles.templateSetModifiersRow}>
+                      {ex.sets.map((set, si) => (
+                        <View key={si} style={styles.templateSetModifierRow}>
+                          <Text style={styles.templateSetModifierLabel}>Set {si + 1}</Text>
+                          <TouchableOpacity
+                            style={[styles.modifierChip, set.modifier === 'drop' && styles.modifierChipDrop, set.modifier === 'negative' && styles.modifierChipNegative]}
+                            onPress={() => {
+                              const next = set.modifier === null ? 'drop' : set.modifier === 'drop' ? 'negative' : null;
+                              setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, sets: e.sets.map((s, j) => j === si ? { ...s, modifier: next } : s) } : e));
+                            }}
+                          >
+                            <Text style={[styles.modifierChipText, (set.modifier === 'drop' || set.modifier === 'negative') && styles.modifierChipTextActive]}>
+                              {set.modifier === 'drop' ? 'Drop' : set.modifier === 'negative' ? 'Negative' : 'Normal'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
                     </View>
                   </View>
                   {idx < editingExercises.length - 1 && (
@@ -820,7 +896,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   />
                   <TouchableOpacity style={styles.modalAddBtn} onPress={() => {
                     if (newExerciseName.trim()) {
-                      setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }], isSupersetWithNext: false }]);
+                      setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }], isSupersetWithNext: false }]);
                       setNewExerciseName('');
                     }
                   }}>
@@ -862,7 +938,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
           return (
           <View key={`ex-card-${exIdx}`} style={[styles.exCard, isSuperset && styles.exCardInSuperset]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <Text style={[styles.exName, { flex: 1 }]} numberOfLines={2}>{displayName}{isSubbed ? ` (sub: ${item.exercise})` : ''}</Text>
+              <Text style={[styles.exName, { flex: 1 }]} numberOfLines={2}>{displayName}{isSubbed ? ` (sub: ${item.exercise})` : ''}{getExerciseSetSummary(item, isSubbed)}</Text>
               {canGenerateWarmups && (
                 <TouchableOpacity style={styles.generateWarmupsBtn} onPress={() => generateWarmupsForExercise(item)}>
                   <Text style={styles.generateWarmupsBtnText}>Generate Warm-ups</Text>
@@ -883,47 +959,57 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
               </TouchableOpacity>
             </View>
             {subbingFor === item.exercise && (
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                <TextInput
-                  style={[styles.noteInput, { flex: 1, minHeight: 36 }]}
-                  placeholder="Replacement (today only)"
-                  placeholderTextColor="#A0A0A0"
-                  value={subInputValue}
-                  onChangeText={setSubInputValue}
-                />
-                <TouchableOpacity style={styles.doneBtn} onPress={() => {
-                  if (subInputValue.trim()) {
-                    setSubstitutions(s => ({ ...s, [item.exercise]: subInputValue.trim() }));
-                    setSubSetCount(c => ({ ...c, [item.exercise]: 1 }));
-                    setInputs(prev => ({ ...prev, [item.exercise]: { sets: { 0: { weight: '', reps: '' } }, cues: prev[item.exercise]?.cues ?? '' } }));
-                  }
-                  setSubbingFor(null);
-                  setSubInputValue('');
-                }}>
-                  <Text style={styles.doneBtnText}>Apply</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.doneBtn} onPress={() => { setSubbingFor(null); setSubInputValue(''); }}>
-                  <Text style={styles.doneBtnText}>Cancel</Text>
-                </TouchableOpacity>
+              <View style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                  <TextInput
+                    style={[styles.noteInput, { flex: 1, minHeight: 36 }]}
+                    placeholder="Replacement (today only)"
+                    placeholderTextColor="#A0A0A0"
+                    value={subInputValue}
+                    onChangeText={setSubInputValue}
+                  />
+                  <TouchableOpacity style={styles.doneBtn} onPress={() => {
+                    if (subInputValue.trim()) {
+                      setSubstitutions(s => ({ ...s, [item.exercise]: subInputValue.trim() }));
+                      setSubSetCount(c => ({ ...c, [item.exercise]: 1 }));
+                      setInputs(prev => ({ ...prev, [item.exercise]: { sets: { 0: { weight: '', reps: '', modifier: subModifier } }, cues: prev[item.exercise]?.cues ?? '' } }));
+                    }
+                    setSubbingFor(null);
+                    setSubInputValue('');
+                    setSubModifier(null);
+                  }}>
+                    <Text style={styles.doneBtnText}>Apply</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.doneBtn} onPress={() => { setSubbingFor(null); setSubInputValue(''); setSubModifier(null); }}>
+                    <Text style={styles.doneBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.templateSetModifierLabel}>Set 1</Text>
+                  <TouchableOpacity
+                    style={[styles.modifierChip, subModifier === 'drop' && styles.modifierChipDrop, subModifier === 'negative' && styles.modifierChipNegative]}
+                    onPress={() => setSubModifier(s => s === null ? 'drop' : s === 'drop' ? 'negative' : null)}
+                  >
+                    <Text style={[styles.modifierChipText, (subModifier === 'drop' || subModifier === 'negative') && styles.modifierChipTextActive]}>
+                      {subModifier === 'drop' ? 'Drop' : subModifier === 'negative' ? 'Negative' : 'Normal'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
-            {item.note && !isSubbed ? <Text style={styles.prevNote}>“{item.note}”</Text> : null}
+            {(lastLogByExercise[item.exercise]?.log?.notes || item.note) && !isSubbed ? <Text style={styles.prevNote}>“{lastLogByExercise[item.exercise]?.log?.notes || item.note}”</Text> : null}
             {effectiveSetIndices.map((setIdx) => {
               const isWarmup = setIdx < warmUpCount;
               const isMarty = item.exercise === 'Marty St Louis';
+              const setModifier = getSetModifier(item, setIdx, warmUpCount, isSubbed);
+              const isSpecialSet = setModifier === 'drop' || setModifier === 'negative';
+              const specialSetDone = isSpecialSet && (inputs[item.exercise]?.sets?.[setIdx]?.reps === '✓');
               const isBWChecked = inputs[item.exercise]?.sets?.[setIdx]?.weight === 'BW';
               const prevSet = isWarmup
                 ? injectedWarmups[item.exercise][setIdx]
-                : (!isSubbed && (item.sets || [])[setIdx - warmUpCount] ? (item.sets || [])[setIdx - warmUpCount] : null);
+                : (lastLogByExercise[item.exercise]?.sets || [])[setIdx - warmUpCount] ?? null;
               const setLabel = isWarmup ? `W${setIdx + 1}` : `SET ${setIdx - warmUpCount + 1}`;
-              const activeSetIndex = effectiveSetIndices.find((i) => {
-                const w = inputs[item.exercise]?.sets?.[i]?.weight;
-                const r = inputs[item.exercise]?.sets?.[i]?.reps;
-                const hasWeight = w != null && String(w).trim() !== '';
-                const hasReps = r != null && String(r).trim() !== '';
-                return !hasWeight || !hasReps;
-              });
-              const isActiveSet = activeSetIndex === setIdx;
+              const isActiveSet = globalActivePosition?.exIdx === exIdx && globalActivePosition?.setIdx === setIdx;
               const isPrSet = !!prSetKeys[`${item.exercise}-${setIdx}`];
 
               return (
@@ -931,6 +1017,19 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   <View style={styles.setLabelRow}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={[styles.setNumber, isWarmup && styles.warmupSetLabel]}>{setLabel}</Text>
+                      {!isWarmup && (
+                        <TouchableOpacity
+                          style={[styles.modifierChip, setModifier === 'drop' && styles.modifierChipDrop, setModifier === 'negative' && styles.modifierChipNegative]}
+                          onPress={() => {
+                            const next = setModifier === null ? 'drop' : setModifier === 'drop' ? 'negative' : null;
+                            updateSetInput(item.exercise, setIdx, 'modifier', next);
+                          }}
+                        >
+                          <Text style={[styles.modifierChipText, setModifier === 'drop' && styles.modifierChipTextActive, setModifier === 'negative' && styles.modifierChipTextActive]}>
+                            {setModifier === 'drop' ? 'Drop' : setModifier === 'negative' ? 'Neg' : 'Normal'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                       {isPrSet && <Text style={styles.prBadge}>👑 NEW PR</Text>}
                     </View>
                     {!isWarmup && overloadNudgeMap[item.exercise] ? (
@@ -940,6 +1039,21 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                     )}
                   </View>
                   <View style={styles.inputGroup}>
+                    {isSpecialSet ? (
+                      <TouchableOpacity
+                        style={[styles.specialSetBtn, specialSetDone && styles.specialSetBtnDone]}
+                        onPress={() => {
+                          if (specialSetDone) return;
+                          updateSetInput(item.exercise, setIdx, 'reps', '✓');
+                          updateSetInput(item.exercise, setIdx, 'weight', '');
+                          if (!item.isSupersetWithNext) startRestTimer();
+                        }}
+                        disabled={specialSetDone}
+                      >
+                        <Text style={styles.specialSetBtnText}>{specialSetDone ? 'Done' : setModifier === 'drop' ? '✅ Complete Dropset' : '✅ Complete Negative'}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
                     {!isMarty && (
                       <View style={{ flex: 1, position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: showBWButton(item.exercise) ? 44 : 0 }}>
                         <TextInput 
@@ -951,12 +1065,6 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
                           onFocus={cancelRestTimer}
                         />
-                        <TouchableOpacity
-                          style={styles.plateCalcBtn}
-                          onPress={() => Alert.alert('Plate calculator', formatPlateAlert(inputs[item.exercise]?.sets?.[setIdx]?.weight || ''))}
-                        >
-                          <Ionicons name="barbell" size={18} color="#888" />
-                        </TouchableOpacity>
                         {showBWButton(item.exercise) && (
                           <TouchableOpacity style={[styles.bwBadge, isBWChecked && styles.bwBadgeActive]} onPress={() => updateSetInput(item.exercise, setIdx, 'weight', isBWChecked ? '' : 'BW')}>
                             <Text style={[styles.bwBadgeText, isBWChecked && styles.bwBadgeTextActive]}>BW</Text>
@@ -981,7 +1089,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                           const hasReps = r != null && String(r).trim() !== '';
                           if (hasWeight && hasReps && !item.isSupersetWithNext) startRestTimer();
                           const weightNum = w === 'BW' || !w ? 0 : parseFloat(String(w).replace(/[^0-9.]/g, ''), 10) || 0;
-                          const allTimeMax = maxWeightByExercise[item.exercise] ?? 0;
+                          const allTimeMax = maxWeightByExercise[normalizeExerciseName(item.exercise)] ?? 0;
                           const prKey = `${item.exercise}-${setIdx}`;
                           if (weightNum > 0 && weightNum >= allTimeMax && !prSetKeysRef.current[prKey]) {
                             setPrSetKeys((prev) => ({ ...prev, [prKey]: true }));
@@ -990,6 +1098,8 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                         }, 50);
                       }}
                     />
+                    </>
+                    )}
                   </View>
                 </View>
               );
@@ -1592,6 +1702,14 @@ const styles = StyleSheet.create({
   prevNote: { color: '#CCFF00', fontSize: 13, fontStyle: 'italic', marginBottom: 15, opacity: 0.8 },
   noteInput: { marginTop: 8, backgroundColor: '#242424', color: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, minHeight: 40, textAlignVertical: 'top' },
   setRowContainer: { marginBottom: 15 },
+  modifierChip: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#222' },
+  modifierChipDrop: { backgroundColor: 'rgba(204, 255, 0, 0.2)' },
+  modifierChipNegative: { backgroundColor: 'rgba(204, 255, 0, 0.2)' },
+  modifierChipText: { color: '#888', fontSize: 12 },
+  modifierChipTextActive: { color: THEME.accent },
+  specialSetBtn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10, borderWidth: 2, borderColor: THEME.accent, alignSelf: 'stretch' },
+  specialSetBtnDone: { opacity: 0.7, borderColor: '#444' },
+  specialSetBtnText: { color: THEME.accent, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
   activeSetRow: { borderWidth: 2, borderColor: THEME.accent, borderRadius: 8, padding: 8, backgroundColor: 'rgba(204, 255, 0, 0.06)' },
   warmupSetRow: { borderLeftWidth: 3, borderLeftColor: '#666', backgroundColor: 'rgba(100, 100, 100, 0.08)', padding: 8, borderRadius: 6 },
   warmupSetLabel: { color: '#888', fontSize: 10 },
@@ -1603,7 +1721,6 @@ const styles = StyleSheet.create({
   lastStatsOverload: { color: THEME.accent, fontSize: 11, fontWeight: 'bold' },
   inputGroup: { flexDirection: 'row', gap: 10 },
   dualInput: { flex: 1, backgroundColor: '#242424', color: '#fff', padding: 12, borderRadius: 8, textAlign: 'center', fontWeight: 'bold', borderWidth: 1, borderColor: '#333', fontSize: 16 },
-  plateCalcBtn: { padding: 8, justifyContent: 'center', alignItems: 'center' },
   bwBadge: { position: 'absolute', right: 8, top: 10, backgroundColor: '#222', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: '#333' },
   bwBadgeText: { color: '#CCFF00', fontSize: 10, fontWeight: '900' },
   bwBadgeActive: { backgroundColor: '#CCFF00', borderColor: '#CCFF00' },
@@ -1681,6 +1798,9 @@ const styles = StyleSheet.create({
   modalRemoveBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#2a1515', borderWidth: 1, borderColor: '#442' },
   modalRemoveText: { color: '#f66', fontSize: 12, fontWeight: 'bold' },
   templateMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, alignItems: 'center' },
+  templateSetModifiersRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  templateSetModifierRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  templateSetModifierLabel: { color: '#888', fontSize: 12 },
   setsStepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   setsStepperLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
   stepperBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
