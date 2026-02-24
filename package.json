@@ -13,7 +13,9 @@
     "expo": "~51.0.0",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
+    "react-dom": "18.2.0",
     "react-native": "0.74.5",
+    "react-native-web": "~0.19.13",
     "@react-native-async-storage/async-storage": "1.23.1",
     "date-fns": "^3.6.0",
     "react-native-chart-kit": "^6.12.0",
@@ -21,6 +23,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "private": true
 }
