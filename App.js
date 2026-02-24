@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, TextInput, Alert, ScrollView, FlatList, ActivityIndicator, Dimensions, Platform, KeyboardAvoidingView, Modal, Pressable } from 'react-native';
 import { format, startOfMonth, startOfYear, addMonths, addYears } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import seedData from './seed_data.json'; 
@@ -100,10 +100,11 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
-  const [substitutions, setSubstitutions] = useState({}); // { originalName: 'Replacement name' } - session only, not saved to template
-  const [subbingFor, setSubbingFor] = useState(null); // exercise name we're entering a sub for
+  const [substitutions, setSubstitutions] = useState({}); // { originalName: 'Replacement name' } - session only
+  const [subSetCount, setSubSetCount] = useState({}); // { originalName: number } - sets count when subbed (today only)
+  const [subbingFor, setSubbingFor] = useState(null);
   const [subInputValue, setSubInputValue] = useState('');
-  const [editMode, setEditMode] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercises, setEditingExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
 
@@ -235,6 +236,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
     onFinish(logs, { type: todaysType, variation });
     setInputs({});
     setSubstitutions({});
+    setSubSetCount({});
     Alert.alert("Success", "2026 Log Saved.");
   };
 
@@ -282,54 +284,66 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
         <Text style={styles.sourceDate}>Source: {currentWorkout.date}</Text>
 
         <TouchableOpacity style={[styles.subBtn, { alignSelf: 'flex-start', marginBottom: 12 }]} onPress={() => {
-          if (editMode) {
-            setEditMode(false);
-          } else {
-            setEditingExercises(currentWorkout.exercises.map(e => ({ ...e, sets: e.sets?.map(s => ({ weight: s.weight ?? '', reps: s.reps ?? '' })) ?? [] })));
-            setEditMode(true);
-          }
+          setEditingExercises(currentWorkout.exercises.map(e => ({ ...e, sets: e.sets?.map(s => ({ weight: s.weight ?? '', reps: s.reps ?? '' })) ?? [] })));
+          setEditModalVisible(true);
         }}>
-          <Text style={styles.subBtnText}>{editMode ? 'Cancel edit' : 'Edit workout'}</Text>
+          <Text style={styles.subBtnText}>Edit workout</Text>
         </TouchableOpacity>
 
-        {editMode ? (
-          <View style={styles.exCard}>
-            <Text style={styles.exName}>Add/remove exercises (saved to this A/B/C)</Text>
-            {editingExercises.map((ex, idx) => (
-              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                <Text style={{ color: '#fff', flex: 1 }}>{ex.exercise}</Text>
-                <TouchableOpacity style={[styles.subBtn, { backgroundColor: '#522' }]} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
-                  <Text style={styles.subBtnText}>Remove</Text>
+        <Modal
+          visible={editModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setEditModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editing {todaysType} {variation}</Text>
+              <Text style={styles.modalSubtitle}>Master template · changes apply to future workouts</Text>
+              <Pressable style={styles.modalCloseBtn} onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.modalCloseText}>Cancel</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+              <Text style={styles.modalSectionLabel}>Exercises</Text>
+              {editingExercises.map((ex, idx) => (
+                <View key={idx} style={styles.modalExerciseRow}>
+                  <Text style={styles.modalExerciseName} numberOfLines={2}>{ex.exercise}</Text>
+                  <TouchableOpacity style={styles.modalRemoveBtn} onPress={() => setEditingExercises(prev => prev.filter((_, i) => i !== idx))}>
+                    <Text style={styles.modalRemoveText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              <View style={styles.modalAddRow}>
+                <TextInput
+                  style={styles.modalAddInput}
+                  placeholder="New exercise name"
+                  placeholderTextColor="#666"
+                  value={newExerciseName}
+                  onChangeText={setNewExerciseName}
+                />
+                <TouchableOpacity style={styles.modalAddBtn} onPress={() => {
+                  if (newExerciseName.trim()) {
+                    setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
+                    setNewExerciseName('');
+                  }
+                }}>
+                  <Text style={styles.modalAddBtnText}>+ Add</Text>
                 </TouchableOpacity>
               </View>
-            ))}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <TextInput
-                style={[styles.noteInput, { flex: 1, minHeight: 40 }]}
-                placeholder="New exercise name"
-                placeholderTextColor="#666"
-                value={newExerciseName}
-                onChangeText={setNewExerciseName}
-              />
-              <TouchableOpacity style={styles.finishBtn} onPress={() => {
-                if (newExerciseName.trim()) {
-                  setEditingExercises(prev => [...prev, { exercise: newExerciseName.trim(), note: '', sets: [{ weight: '', reps: '' }, { weight: '', reps: '' }, { weight: '', reps: '' }] }]);
-                  setNewExerciseName('');
-                }
+            </ScrollView>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={() => {
+                onSaveOverrides?.(todaysType, variation, editingExercises);
+                setEditModalVisible(false);
               }}>
-                <Text style={styles.finishText}>+ Add</Text>
+                <Text style={styles.modalSaveBtnText}>Save template</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[styles.finishBtn, { marginTop: 8, backgroundColor: '#333' }]} onPress={() => {
-              onSaveOverrides?.(todaysType, variation, editingExercises);
-              setEditMode(false);
-            }}>
-              <Text style={styles.finishText}>Save workout</Text>
-            </TouchableOpacity>
           </View>
-        ) : null}
+        </Modal>
 
-        {!editMode && currentWorkout.exercises.map((item, exIdx) => {
+        {currentWorkout.exercises.map((item, exIdx) => {
           const displayName = substitutions[item.exercise] ?? item.exercise;
           const isSubbed = !!substitutions[item.exercise];
           return (
@@ -341,6 +355,7 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 onPress={() => {
                   if (substitutions[item.exercise]) {
                     setSubstitutions(s => { const n = { ...s }; delete n[item.exercise]; return n; });
+                    setSubSetCount(c => { const n = { ...c }; delete n[item.exercise]; return n; });
                   } else {
                     setSubbingFor(item.exercise);
                   }
@@ -359,7 +374,11 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                   onChangeText={setSubInputValue}
                 />
                 <TouchableOpacity style={styles.doneBtn} onPress={() => {
-                  if (subInputValue.trim()) setSubstitutions(s => ({ ...s, [item.exercise]: subInputValue.trim() }));
+                  if (subInputValue.trim()) {
+                    setSubstitutions(s => ({ ...s, [item.exercise]: subInputValue.trim() }));
+                    setSubSetCount(c => ({ ...c, [item.exercise]: 1 }));
+                    setInputs(prev => ({ ...prev, [item.exercise]: { sets: { 0: { weight: '', reps: '' } }, cues: prev[item.exercise]?.cues ?? '' } }));
+                  }
                   setSubbingFor(null);
                   setSubInputValue('');
                 }}>
@@ -370,16 +389,17 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 </TouchableOpacity>
               </View>
             )}
-            {item.note ? <Text style={styles.prevNote}>“{item.note}”</Text> : null}
-            {item.sets.map((prev, setIdx) => {
+            {item.note && !isSubbed ? <Text style={styles.prevNote}>“{item.note}”</Text> : null}
+            {(isSubbed ? Array.from({ length: subSetCount[item.exercise] ?? 1 }, (_, i) => i) : item.sets.map((_, i) => i)).map((setIdx) => {
               const isMarty = item.exercise === 'Marty St Louis';
               const isBWChecked = inputs[item.exercise]?.sets?.[setIdx]?.weight === 'BW';
+              const prevSet = !isSubbed && item.sets[setIdx] ? item.sets[setIdx] : null;
 
               return (
                 <View key={`set-row-${exIdx}-${setIdx}`} style={styles.setRowContainer}>
                   <View style={styles.setLabelRow}>
                     <Text style={styles.setNumber}>SET {setIdx + 1}</Text>
-                    <Text style={styles.lastStats}>Last: {prev.weight || 'BW'} × {prev.reps}</Text>
+                    <Text style={styles.lastStats}>{prevSet ? `Last: ${prevSet.weight || 'BW'} × ${prevSet.reps}` : '—'}</Text>
                   </View>
                   <View style={styles.inputGroup}>
                     {!isMarty && (
@@ -411,6 +431,29 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
                 </View>
               );
             })}
+            {isSubbed && (
+              <View style={styles.addRemoveSetRow}>
+                <TouchableOpacity style={styles.addRemoveSetBtn} onPress={() => setSubSetCount(c => ({ ...c, [item.exercise]: (c[item.exercise] ?? 1) + 1 }))}>
+                  <Text style={styles.addRemoveSetText}>+ Add set</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.addRemoveSetBtn, (subSetCount[item.exercise] ?? 1) <= 1 && styles.addRemoveSetBtnDisabled]}
+                  onPress={() => {
+                    const n = subSetCount[item.exercise] ?? 1;
+                    if (n <= 1) return;
+                    setSubSetCount(c => ({ ...c, [item.exercise]: n - 1 }));
+                    setInputs(prev => {
+                      const sets = { ...prev[item.exercise]?.sets };
+                      delete sets[n - 1];
+                      return { ...prev, [item.exercise]: { ...prev[item.exercise], sets } };
+                    });
+                  }}
+                  disabled={(subSetCount[item.exercise] ?? 1) <= 1}
+                >
+                  <Text style={styles.addRemoveSetText}>− Remove set</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {/* Notes input for this exercise */}
             <TextInput
               style={styles.noteInput}
@@ -887,4 +930,30 @@ const styles = StyleSheet.create({
   subBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
   subBtnActive: { backgroundColor: '#333', borderColor: '#CCFF00' },
   subBtnText: { color: '#CCFF00', fontSize: 11, fontWeight: 'bold' },
+  addRemoveSetRow: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 4 },
+  addRemoveSetBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#333', backgroundColor: '#1a1a1a' },
+  addRemoveSetBtnDisabled: { opacity: 0.4 },
+  addRemoveSetText: { color: '#CCFF00', fontSize: 12, fontWeight: 'bold' },
+  modalContainer: { flex: 1, backgroundColor: '#000' },
+  modalHeader: { paddingTop: 24, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#222' },
+  modalTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 4 },
+  modalSubtitle: { color: '#666', fontSize: 12, marginBottom: 16 },
+  modalCloseBtn: { alignSelf: 'flex-start', paddingVertical: 8, paddingHorizontal: 4 },
+  modalCloseText: { color: '#888', fontSize: 15, fontWeight: '600' },
+  modalScroll: { flex: 1 },
+  modalScrollContent: { padding: 20, paddingBottom: 24 },
+  modalSectionLabel: { color: '#666', fontSize: 11, fontWeight: 'bold', marginBottom: 12, letterSpacing: 0.5 },
+  modalExerciseRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#111', borderRadius: 10, borderWidth: 1, borderColor: '#222' },
+  modalExerciseName: { color: '#fff', flex: 1, fontSize: 15, fontWeight: '600' },
+  modalRemoveBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#2a1515', borderWidth: 1, borderColor: '#442' },
+  modalRemoveText: { color: '#f66', fontSize: 12, fontWeight: 'bold' },
+  modalAddRow: { flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 8 },
+  modalAddInput: { flex: 1, backgroundColor: '#111', color: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#222', fontSize: 15 },
+  modalAddBtn: { paddingVertical: 14, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', justifyContent: 'center' },
+  modalAddBtnText: { color: '#CCFF00', fontSize: 14, fontWeight: 'bold' },
+  modalFooter: { padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#000' },
+  modalSaveBtn: { backgroundColor: '#CCFF00', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  modalSaveBtnText: { color: '#000', fontSize: 17, fontWeight: '900' },
+  doneBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333' },
+  doneBtnText: { color: '#CCFF00', fontSize: 13, fontWeight: 'bold' },
 });
