@@ -572,61 +572,83 @@ const ProgressTimeline = ({ history }) => {
   }, [history, selectedLift]);
 
   if (Platform.OS !== 'web') {
-    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Weight-over-time chart is on the web version.</Text></View>;
+    return <View style={styles.chartSection}><Text style={styles.noDataText}>Weight-over-time chart is on the web version.</Text></View>;
   }
+  const chartFont = { fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', fontWeight: 'bold' };
   try {
-    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts');
+    const { AreaChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts');
     return (
-      <View style={styles.chartWrapper}>
-        <Text style={styles.exName}>{selectedLift} – weight & progress</Text>
-        <View style={styles.liftPicker}>
-          {LIFT_KEYWORDS.map(({ key }) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.pickerBtn, selectedLift === key && { borderColor: THEME.accent, backgroundColor: THEME.highlight }]}
-              onPress={() => setSelectedLift(key)}
-            >
-              <Text style={[styles.pickerText, selectedLift === key && { color: THEME.accent }]}>{key.toUpperCase()}</Text>
-            </TouchableOpacity>
-          ))}
+      <View style={styles.chartSection}>
+        <View style={styles.chartSectionInner}>
+          <Text style={[styles.exName, chartFont]}>{selectedLift} – weight & progress</Text>
+          <View style={styles.liftPicker}>
+            {LIFT_KEYWORDS.map(({ key }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.pickerBtn, selectedLift === key && { borderColor: THEME.accent, backgroundColor: THEME.highlight }]}
+                onPress={() => setSelectedLift(key)}
+              >
+                <Text style={[styles.pickerText, selectedLift === key && { color: THEME.accent }, chartFont]}>{key.toUpperCase()}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
         {!chartData.length ? (
-          <Text style={styles.noDataText}>No data for {selectedLift}. Log weight and reps to see progress and est. 1RM.</Text>
+          <Text style={[styles.noDataText, chartFont]}>No data for {selectedLift}. Log weight and reps to see progress and est. 1RM.</Text>
         ) : (
           <>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={chartData} margin={{ top: 12, right: 12, left: 4, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                <XAxis dataKey="date" stroke="#555" tick={{ fill: '#aaa', fontSize: 11, fontWeight: 'bold' }} axisLine={{ stroke: '#333' }} tickLine={false} />
-                <YAxis stroke="#555" tick={{ fill: '#aaa', fontSize: 11, fontWeight: 'bold' }} axisLine={false} tickLine={false} width={32} />
-                <Tooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload?.length || !label) return null;
-                    const p = payload[0].payload;
-                    return (
-                      <div style={{ backgroundColor: '#111', border: '1px solid #333', borderRadius: 10, padding: '12px 14px', minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
-                        <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{String(label).toUpperCase()}</div>
-                        <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Weight: {p.weight} lb</div>
-                        {p.est1RM != null && <div style={{ color: '#00CCFF', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Est. 1RM: {p.est1RM} lb</div>}
-                        {p.setsSummary ? <div style={{ color: '#888', fontSize: 12, fontWeight: '600', marginTop: 6, borderTop: '1px solid #222', paddingTop: 6 }}>Sets: {p.setsSummary}</div> : null}
-                      </div>
-                    );
-                  }}
-                />
-                <Line type="monotone" dataKey="weight" stroke="#CCFF00" dot={{ r: 4, fill: '#CCFF00', strokeWidth: 0 }} connectNulls strokeWidth={2} />
-                <Line type="monotone" dataKey="est1RM" stroke="#00CCFF" dot={{ r: 3, fill: '#00CCFF', strokeWidth: 0 }} connectNulls strokeDasharray="5 3" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-            <View style={styles.chartLegend}>
-              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#CCFF00' }]} /><Text style={styles.chartLegendText}>Weight</Text></View>
-              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#00CCFF' }]} /><Text style={styles.chartLegendText}>Est. 1RM</Text></View>
+            <View style={styles.chartEdgeToEdge}>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={chartData} margin={{ top: 16, right: 8, left: 0, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="weightGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#CCFF00" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#CCFF00" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={{ stroke: '#333' }}
+                    tickLine={false}
+                    tick={{ fill: '#888', fontSize: 11, ...chartFont }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                    tick={{ fill: '#888', fontSize: 11, ...chartFont }}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length || !label) return null;
+                      const p = payload[0].payload;
+                      return (
+                        <div style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', backgroundColor: '#0a0a0a', border: '1px solid #333', borderRadius: 10, padding: '12px 14px', minWidth: 140, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+                          <div style={{ color: '#CCFF00', fontSize: 11, fontWeight: '900', letterSpacing: 0.5, marginBottom: 8 }}>{String(label).toUpperCase()}</div>
+                          <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Weight: {p.weight} lb</div>
+                          {p.est1RM != null && <div style={{ color: '#fff', fontSize: 13, fontWeight: 'bold', marginBottom: 4 }}>Est. 1RM: {p.est1RM} lb</div>}
+                          {p.setsSummary ? <div style={{ color: '#888', fontSize: 12, fontWeight: '600', marginTop: 6, borderTop: '1px solid #222', paddingTop: 6 }}>Sets: {p.setsSummary}</div> : null}
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area type="monotone" dataKey="weight" stroke="none" fill="url(#weightGradient)" fillOpacity={1} />
+                  <Line type="monotone" dataKey="weight" stroke="#CCFF00" dot={{ r: 3, fill: '#CCFF00', strokeWidth: 0 }} connectNulls strokeWidth={2} />
+                  <Line type="monotone" dataKey="est1RM" stroke="#fff" dot={{ r: 3, fill: '#fff', strokeWidth: 0 }} connectNulls strokeDasharray="5 3" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </View>
+            <View style={[styles.chartLegend, styles.chartSectionInner]}>
+              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#CCFF00' }]} /><Text style={[styles.chartLegendText, chartFont]}>Weight</Text></View>
+              <View style={styles.chartLegendItem}><View style={[styles.chartLegendDot, { backgroundColor: '#fff' }]} /><Text style={[styles.chartLegendText, chartFont]}>Est. 1RM</Text></View>
             </View>
           </>
         )}
       </View>
     );
   } catch (e) {
-    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Chart unavailable</Text></View>;
+    return <View style={styles.chartSection}><Text style={styles.noDataText}>Chart unavailable</Text></View>;
   }
 };
 
@@ -779,9 +801,12 @@ const styles = StyleSheet.create({
   logLine: { marginBottom: 8, borderBottomWidth: 1, borderBottomColor: '#222', paddingBottom: 5 },
   logExercise: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
   logNotes: { color: '#888', fontSize: 13, lineHeight: 18 },
+  chartSection: { marginBottom: 24 },
+  chartSectionInner: { paddingHorizontal: 20 },
+  chartEdgeToEdge: { marginHorizontal: -20 },
   chartWrapper: { marginBottom: 30, backgroundColor: '#111', padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#1a1a1a' },
   liftPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 8 },
+  chartLegend: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginTop: 10 },
   chartLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chartLegendDot: { width: 10, height: 10, borderRadius: 5 },
   chartLegendText: { color: '#888', fontSize: 12, fontWeight: 'bold' },
