@@ -410,14 +410,47 @@ const TodayScreen = ({ history, onFinish, initialType, initialVariation, overrid
   );
 };
 
-// Key lifts to show weight over time (match history exercise names)
+// Each lift: include = phrases that count (typo-friendly); exclude = variations that must NOT count.
+// Tuned from workout_history.csv so DB/BB and variations don’t mix (e.g. DB curls vs BB curls, bench vs incline).
 const LIFT_KEYWORDS = [
-  { key: 'Squat', keywords: ['squat'] },
-  { key: 'Bench Press', keywords: ['bench press', 'bench'] },
-  { key: 'Incline Bench', keywords: ['incline bench', 'incline press'] },
-  { key: 'Curls', keywords: ['curl'] },
-  { key: 'Deadlift', keywords: ['deadlift', 'dead lift'] },
+  {
+    key: 'Bench Press',
+    include: ['bench press', 'bb bench', 'bench', 'benc'],
+    exclude: ['db bench', 'dumbbell bench', 'incline'],
+  },
+  {
+    key: 'Squat',
+    include: ['squat', 'squats'],
+    exclude: ['slant', 'hack squat', 'goblet', 'front squat', 'front squats', 'split squat', 'bulgarian', 'leg press', 'pistol', 'smith squat', 'sissy', 'belt squat', 'hold squat', 'seated squat', 'squat jump'],
+  },
+  {
+    key: 'DB Curls',
+    include: ['db curl', 'dumbbell curl', 'curls', 'regular curl'],
+    exclude: ['stretch', 'stretch curl', 'bb curl', 'barbell curl', 'hammer curl', 'cable curl', 'preacher', 'incline curl', 'concentration curl', 'ez bar', 'rope curl', 'overhead bar curl', 'wide curl'],
+  },
+  {
+    key: 'Deadlift',
+    include: ['deadlift', 'dead lift', 'deadlifts'],
+    exclude: ['romanian', 'rdl', 'stiff leg', 'stiff-leg'],
+  },
+  {
+    key: 'Incline Bench',
+    include: ['incline bench', 'incline press', 'incline bb', 'bb incline', 'incline bench bb'],
+    exclude: ['db incline', 'dumbbell incline', 'incline db'],
+  },
+  {
+    key: 'BB Row',
+    include: ['barbell row', 'bb row', 'bb standing row', 'bent row', 'pendlay row'],
+    exclude: ['db row', 'dumbbell row', 'cable row', 't-bar', 'tbar'],
+  },
 ];
+
+function matchesLift(name, lift) {
+  const n = name.toLowerCase().trim();
+  const included = (lift.include || []).some(phrase => n.includes(phrase.toLowerCase()));
+  const excluded = (lift.exclude || []).some(phrase => n.includes(phrase.toLowerCase()));
+  return included && !excluded;
+}
 
 function getWeightFromLog(log) {
   if (log == null) return 0;
@@ -432,52 +465,109 @@ function getWeightFromLog(log) {
   return 0;
 }
 
+// Epley formula: 1RM ≈ weight * (1 + reps/30). Returns null if reps missing.
+function estimated1RM(weight, reps) {
+  if (weight <= 0 || reps == null || reps <= 0) return null;
+  const r = Number(reps);
+  if (isNaN(r)) return null;
+  return Math.round(weight * (1 + r / 30));
+}
+
+// Parse notes "225x5, 225x4" or "40x8" into best weight and best estimated 1RM for that log.
+function getBestWeightAnd1RM(log) {
+  let bestWeight = getWeightFromLog(log);
+  let best1RM = null;
+  const notes = String(log.notes || log.note || '');
+  const sets = notes.split(',').map(s => s.trim());
+  for (const set of sets) {
+    const match = set.match(/(\d+)\s*x\s*(\d+)/i);
+    if (match) {
+      const w = parseInt(match[1], 10);
+      const r = parseInt(match[2], 10);
+      if (w > 0 && r > 0) {
+        if (w > bestWeight) bestWeight = w;
+        const oneRM = estimated1RM(w, r);
+        if (oneRM != null && (best1RM == null || oneRM > best1RM)) best1RM = oneRM;
+      }
+    }
+  }
+  if (log.sets?.length) {
+    for (const s of log.sets) {
+      const w = s.weight != null && s.weight !== 'Bodyweight' ? Number(s.weight) : 0;
+      const r = s.reps != null ? Number(s.reps) : 0;
+      if (w > 0 && r > 0) {
+        if (w > bestWeight) bestWeight = w;
+        const oneRM = estimated1RM(w, r);
+        if (oneRM != null && (best1RM == null || oneRM > best1RM)) best1RM = oneRM;
+      }
+    }
+  }
+  return { weight: bestWeight, est1RM: best1RM };
+}
+
 const ProgressTimeline = ({ history }) => {
+  const [selectedLift, setSelectedLift] = useState(LIFT_KEYWORDS[0].key);
+
   const chartData = useMemo(() => {
-    const byLift = {};
-    LIFT_KEYWORDS.forEach(({ key }) => { byLift[key] = []; });
+    const match = LIFT_KEYWORDS.find(({ key }) => key === selectedLift);
+    if (!match) return [];
+    const entries = [];
     (history || []).forEach((log) => {
       const name = (log.exercise || '').toLowerCase();
-      const weight = getWeightFromLog(log);
-      if (!name) return;
-      const match = LIFT_KEYWORDS.find(({ keywords }) => keywords.some(k => name.includes(k)));
-      if (!match || weight <= 0) return;
-      byLift[match.key].push({ date: log.date, weight });
+      if (!name || !matchesLift(name, match)) return;
+      const { weight, est1RM } = getBestWeightAnd1RM(log);
+      if (weight <= 0) return;
+      entries.push({ date: log.date, weight, est1RM });
     });
-    const dates = [...new Set((history || []).map(h => h.date))].sort((a, b) => parseWorkoutDate(a) - parseWorkoutDate(b)).slice(-30);
-    return dates.map(date => {
-      const point = { date };
-      LIFT_KEYWORDS.forEach(({ key }) => {
-        const entry = byLift[key].find(e => e.date === date);
-        point[key] = entry ? entry.weight : null;
-      });
-      return point;
-    }).filter(p => Object.keys(p).some(k => k !== 'date' && p[k] != null));
-  }, [history]);
+    const byDate = {};
+    entries.forEach(e => {
+      if (!byDate[e.date] || e.weight > byDate[e.date].weight) {
+        byDate[e.date] = { date: e.date, weight: e.weight, est1RM: byDate[e.date]?.est1RM ?? e.est1RM };
+      }
+      if (e.est1RM != null && (byDate[e.date].est1RM == null || e.est1RM > byDate[e.date].est1RM)) {
+        byDate[e.date].est1RM = e.est1RM;
+      }
+    });
+    const dates = Object.keys(byDate).sort((a, b) => parseWorkoutDate(a) - parseWorkoutDate(b)).slice(-30);
+    return dates.map(d => byDate[d]).filter(Boolean);
+  }, [history, selectedLift]);
 
   if (Platform.OS !== 'web') {
     return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Weight-over-time chart is on the web version.</Text></View>;
   }
-  if (!chartData.length) {
-    return <View style={styles.chartWrapper}><Text style={styles.noDataText}>Log some lifts (squat, bench, curls, deadlift, etc.) to see weight over time.</Text></View>;
-  }
   try {
     const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = require('recharts');
-    const colors = ['#CCFF00', '#00CCFF', '#FF00CC', '#00FF99', '#FF9900'];
     return (
       <View style={styles.chartWrapper}>
-        <Text style={styles.exName}>Weight over time</Text>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-            <XAxis dataKey="date" stroke="#666" tick={{ fontSize: 10 }} />
-            <YAxis stroke="#666" tick={{ fontSize: 10 }} />
-            <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }} labelStyle={{ color: '#fff' }} />
-            {LIFT_KEYWORDS.map(({ key }, i) => (
-              <Line key={key} type="monotone" dataKey={key} stroke={colors[i % colors.length]} dot={{ r: 3 }} connectNulls />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+        <Text style={styles.exName}>{selectedLift} – weight & progress</Text>
+        <View style={styles.liftPicker}>
+          {LIFT_KEYWORDS.map(({ key }) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.pickerBtn, selectedLift === key && { borderColor: THEME.accent, backgroundColor: THEME.highlight }]}
+              onPress={() => setSelectedLift(key)}
+            >
+              <Text style={[styles.pickerText, selectedLift === key && { color: THEME.accent }]}>{key.toUpperCase()}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {!chartData.length ? (
+          <Text style={styles.noDataText}>No data for {selectedLift}. Log weight and reps to see progress and est. 1RM.</Text>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                <XAxis dataKey="date" stroke="#666" tick={{ fontSize: 10 }} />
+                <YAxis stroke="#666" tick={{ fontSize: 10 }} />
+                <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }} labelStyle={{ color: '#fff' }} />
+                <Line type="monotone" dataKey="weight" name="Weight (lb)" stroke="#CCFF00" dot={{ r: 4 }} connectNulls />
+                <Line type="monotone" dataKey="est1RM" name="Est. 1RM (lb)" stroke="#00CCFF" dot={{ r: 3 }} connectNulls strokeDasharray="4 2" />
+              </LineChart>
+            </ResponsiveContainer>
+            <Text style={styles.noDataText}>Yellow = top weight · Blue dashed = estimated 1RM (from weight × reps)</Text>
+          </>
+        )}
       </View>
     );
   } catch (e) {
@@ -504,7 +594,7 @@ const HistoryScreen = ({ history }) => {
         keyExtractor={(item, index) => `hist-${index}`}
         renderItem={({ item }) => (
           <View style={styles.sessionCard}>
-            <Text style={styles.sessionHeader}>{item.date.toUpperCase()}</Text>
+            <Text style={styles.sessionHeader}>{item.date.toUpperCase()}{item.data?.[0]?.type ? ` · ${item.data[0].type.toUpperCase()}` : ''}</Text>
             {item.data.map((log, i) => (
               <View key={i} style={styles.logLine}>
                 <Text style={styles.logExercise}>{log.exercise}</Text>
