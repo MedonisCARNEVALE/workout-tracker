@@ -416,7 +416,7 @@ const LIFT_KEYWORDS = [
   {
     key: 'Bench Press',
     include: ['bench press', 'bb bench', 'bench', 'benc'],
-    exclude: ['db bench', 'dumbbell bench', 'incline'],
+    exclude: ['db bench', 'dumbbell bench', 'incline', 'ab bench', 'bench fly', 'bench flies', 'reverse bench'],
   },
   {
     key: 'Squat',
@@ -426,7 +426,7 @@ const LIFT_KEYWORDS = [
   {
     key: 'DB Curls',
     include: ['db curl', 'dumbbell curl', 'curls', 'regular curl'],
-    exclude: ['stretch', 'stretch curl', 'bb curl', 'barbell curl', 'hammer curl', 'cable curl', 'preacher', 'incline curl', 'concentration curl', 'ez bar', 'rope curl', 'overhead bar curl', 'wide curl'],
+    exclude: ['stretch', 'stretch curl', 'bb curl', 'barbell curl', 'hammer curl', 'cable curl', 'preacher', 'incline curl', 'concentration curl', 'ez bar', 'rope curl', 'overhead bar curl', 'wide curl', 'leg curl'],
   },
   {
     key: 'Deadlift',
@@ -436,7 +436,7 @@ const LIFT_KEYWORDS = [
   {
     key: 'Incline Bench',
     include: ['incline bench', 'incline press', 'incline bb', 'bb incline', 'incline bench bb'],
-    exclude: ['db incline', 'dumbbell incline', 'incline db'],
+    exclude: ['db incline', 'dumbbell incline', 'incline db', 'incline press machine', 'incline machine', 'incline chest machine'],
   },
   {
     key: 'BB Row',
@@ -560,7 +560,7 @@ const ProgressTimeline = ({ history }) => {
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                 <XAxis dataKey="date" stroke="#666" tick={{ fontSize: 10 }} />
                 <YAxis stroke="#666" tick={{ fontSize: 10 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333' }} labelStyle={{ color: '#fff' }} />
+                <Tooltip contentStyle={{ backgroundColor: '#111', border: '1px solid #333', color: '#fff', fontWeight: 'bold', fontSize: 13 }} labelStyle={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }} itemStyle={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }} />
                 <Line type="monotone" dataKey="weight" name="Weight (lb)" stroke="#CCFF00" dot={{ r: 4 }} connectNulls />
                 <Line type="monotone" dataKey="est1RM" name="Est. 1RM (lb)" stroke="#00CCFF" dot={{ r: 3 }} connectNulls strokeDasharray="4 2" />
               </LineChart>
