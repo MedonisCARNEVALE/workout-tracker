@@ -172,6 +172,7 @@ const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
 const AB_TEMPLATES_KEY = 'workout_tracker_ab_templates';
 const LAST_AB_WORKOUT_KEY = 'workout_tracker_last_ab_workout';
+const ABS_SHOW_MIGRATION_KEY = 'workout_tracker_abs_show_migration_v1';
 const IN_PROGRESS_WORKOUT_KEY = 'workout_tracker_in_progress';
 
 const DEFAULT_AB_TEMPLATES = {
@@ -1756,12 +1757,13 @@ export default function App() {
 
   const loadData = async () => {
     try {
-      const [stored, overridesStored, abTemplatesStored, lastAbStored, inProgressStored] = await Promise.all([
+      const [stored, overridesStored, abTemplatesStored, lastAbStored, inProgressStored, absMigrationDone] = await Promise.all([
         AsyncStorage.getItem('workout_history'),
         AsyncStorage.getItem(OVERRIDES_KEY),
         AsyncStorage.getItem(AB_TEMPLATES_KEY),
         AsyncStorage.getItem(LAST_AB_WORKOUT_KEY),
         AsyncStorage.getItem(IN_PROGRESS_WORKOUT_KEY),
+        AsyncStorage.getItem(ABS_SHOW_MIGRATION_KEY),
       ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
       const userLogsOnly = Array.isArray(parsedStored) ? parsedStored.filter((log) => log.completedAt) : [];
@@ -1769,7 +1771,13 @@ export default function App() {
       setHistory([...normalizedSeed, ...userLogsOnly]);
       setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
       setAbTemplates(abTemplatesStored ? { ...DEFAULT_AB_TEMPLATES, ...JSON.parse(abTemplatesStored) } : DEFAULT_AB_TEMPLATES);
-      setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
+      if (!absMigrationDone) {
+        await AsyncStorage.removeItem(LAST_AB_WORKOUT_KEY);
+        await AsyncStorage.setItem(ABS_SHOW_MIGRATION_KEY, '1');
+        setLastAbWorkout(null);
+      } else {
+        setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
+      }
       let restored = null;
       if (inProgressStored) {
         try {
