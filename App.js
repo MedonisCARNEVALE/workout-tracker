@@ -1763,8 +1763,9 @@ export default function App() {
         AsyncStorage.getItem(IN_PROGRESS_WORKOUT_KEY),
       ]);
       const parsedStored = stored ? JSON.parse(stored) : [];
+      const userLogsOnly = Array.isArray(parsedStored) ? parsedStored.filter((log) => log.completedAt) : [];
       const normalizedSeed = seedData.map(normalizeHistoryLog);
-      setHistory([...normalizedSeed, ...parsedStored]);
+      setHistory([...normalizedSeed, ...userLogsOnly]);
       setOverrides(overridesStored ? JSON.parse(overridesStored) : {});
       setAbTemplates(abTemplatesStored ? { ...DEFAULT_AB_TEMPLATES, ...JSON.parse(abTemplatesStored) } : DEFAULT_AB_TEMPLATES);
       setLastAbWorkout(lastAbStored ? JSON.parse(lastAbStored) : null);
@@ -1816,9 +1817,12 @@ export default function App() {
   }, [loading]);
 
   const onFinish = async (logs, completed, abCompletion) => {
-    const updated = [...history, ...logs];
+    const normalizedSeed = seedData.map(normalizeHistoryLog);
+    const userLogs = history.filter((log) => log.completedAt);
+    const updatedUserLogs = [...userLogs, ...logs];
+    const updated = [...normalizedSeed, ...updatedUserLogs];
     setHistory(updated);
-    await AsyncStorage.setItem('workout_history', JSON.stringify(updated));
+    await AsyncStorage.setItem('workout_history', JSON.stringify(updatedUserLogs));
     if (completed) {
       setTotalTonnage(computeTonnageFromLogs(logs));
       await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
@@ -1860,9 +1864,11 @@ export default function App() {
 
   const onUndoLastSession = async () => {
     if (lastCompletedAt == null || !lastCompletedWorkout) return;
-    const filtered = history.filter(log => log.completedAt !== lastCompletedAt);
+    const normalizedSeed = seedData.map(normalizeHistoryLog);
+    const userLogs = history.filter((log) => log.completedAt && log.completedAt !== lastCompletedAt);
+    const filtered = [...normalizedSeed, ...userLogs];
     setHistory(filtered);
-    await AsyncStorage.setItem('workout_history', JSON.stringify(filtered));
+    await AsyncStorage.setItem('workout_history', JSON.stringify(userLogs));
     await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(lastCompletedWorkout));
     setSuggestedWorkout(lastCompletedWorkout);
     setLastCompletedAt(null);
@@ -1942,7 +1948,7 @@ export default function App() {
         ) : null}
         <View style={styles.tabBar}>
           <TouchableOpacity onPress={() => setTab('Today')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Today' && {color: THEME.accent}]}>TODAY</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>ARCHIVE</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setTab('Stats')} style={styles.tabItem}><Text style={[styles.tabText, tab==='Stats' && {color: THEME.accent}]}>HISTORY</Text></TouchableOpacity>
         </View>
       </SafeAreaView>
     </KeyboardAvoidingView>
