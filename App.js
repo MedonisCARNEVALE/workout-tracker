@@ -61,6 +61,57 @@ const normalizeExerciseSets = (ex) => {
 
 const normalizeExerciseName = (name) => (name || '').trim().toLowerCase();
 
+/** For "Add exercise" history list: map variations to one canonical key per movement. */
+function getCanonicalExerciseKey(name, workoutType) {
+  const raw = (name || '').trim();
+  const n = raw.toLowerCase().replace(/\s+/g, ' ')
+    .replace(/\bbb\b/g, 'barbell').replace(/\bdb\b/g, 'dumbbell')
+    .replace(/\btri\b/g, 'tricep').replace(/\bincl\b/g, 'incline').replace(/\bdecl\b/g, 'decline');
+  const t = (workoutType || '').toLowerCase();
+
+  if (t === 'push') {
+    // — Incline / decline fly
+    if (/incline.*(fly|file)|(fly|file).*incline/i.test(n)) return 'incline fly';
+    if (/decline.*(fly|file)|(fly|file).*decline/i.test(n)) return 'decline fly';
+    // — Incline press: BB vs DB vs machine (order = most specific first)
+    if (/incline.*machine|machine.*incline/i.test(n)) return 'incline machine press';
+    if (/dumbbell.*incline|incline.*dumbbell|^db incline|db incline/i.test(n)) return 'db incline press';
+    if (/incline/i.test(n) && (/press|bench|barbell|bb/i.test(n) || n === 'incline')) return 'incline press';
+    if (/decline/i.test(n) && (/press|bench|chest/i.test(n))) return 'decline press';
+    // — Skulls: stretch = own; skulls+press / to chest = one group; rest = skull crushers
+    if (/stretch.*skull|skull.*stretch/i.test(n)) return 'stretch skulls';
+    if (/(skull|skulls).*press|press.*(skull|skulls)|skull.*to chest|to chest/i.test(n)) return 'skulls and press';
+    if (/skull|skulls/i.test(n)) return 'skull crushers';
+    // — Overhead: shoulder OHP vs overhead rope (tricep)
+    if (/overhead.*rope|rope.*overhead/i.test(n)) return 'overhead rope tricep';
+    if (/ohp|overhead.*press/i.test(n) && !/rope|tricep|tri/i.test(n)) return 'overhead press';
+    // — Tricep pushdown (includes extension), then kickback
+    if (/(tricep|tri).*(push|pull|rope|pushdown|extension)|pushdown|rope.*tricep|tricep.*rope|tricep.*extension|extension.*tricep/i.test(n)) return 'tricep pushdown';
+    if (/kickback/i.test(n)) return 'tricep kickback';
+    // — Chest fly: split by implement / angle
+    if (/upward.*cable.*(fly|file)|cable.*upward.*(fly|file)|(fly|file).*upward.*cable/i.test(n)) return 'upward cable fly';
+    if (/cable.*(fly|file)|(fly|file).*cable/i.test(n)) return 'cable fly';
+    if (/machine.*(fly|file)|(fly|file).*machine|fly.*machine|chest fly machine/i.test(n)) return 'machine fly';
+    if (/low.*(chest|fly|file)|(chest|fly|file).*low/i.test(n) && /(fly|file|flies)/i.test(n)) return 'low chest fly';
+    if (/flat.*(bench|fly|file)|(bench|fly|file).*flat|dumbbell.*(fly|flys)|db (fly|flys)/i.test(n)) return 'flat bench fly';
+    if (/(chest|fly|flys|flies|file)/i.test(n) && /(fly|file|flies)/i.test(n)) return 'chest fly';
+    // — Bench / chest press: BB vs DB vs machine
+    if (/chest press.*machine|machine.*chest press/i.test(n)) return 'chest press machine';
+    if (/dumbbell.*chest.*press|db.*chest.*press|chest.*press.*dumbbell/i.test(n)) return 'db chest press';
+    if (/(barbell|bb).*press|press.*(barbell|bb)|^bench$|bench press/i.test(n)) return 'bench press';
+    if (/dip/i.test(n)) return 'dips';
+    if (/lateral.*raise|raise.*lateral/i.test(n)) return 'lateral raise';
+    if (/front.*raise|raise.*front/i.test(n)) return 'front raise';
+  }
+  if (t === 'pull') {
+    // Pull: add grouping later
+  }
+  if (t === 'legs' || t.includes('leg')) {
+    // Legs: add grouping later
+  }
+  return n || raw.toLowerCase();
+}
+
 /** Build a notes string from seed_data.json record format (sets array) so history lookups work. */
 const buildNotesFromSeedSets = (record) => {
   if (!record || !Array.isArray(record.sets) || record.sets.length === 0) return '';
@@ -539,21 +590,22 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
 
   const historyExercisesForType = useMemo(() => {
     const typeLower = (todaysType || '').toLowerCase();
-    const seen = new Set();
-    const withDate = [];
+    const byCanonical = new Map();
     (history || []).forEach((log) => {
       if (!log.type || !log.exercise) return;
       if (!log.type.toLowerCase().includes(typeLower)) return;
       const name = (log.exercise || '').trim();
       if (!name) return;
-      const key = name.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
+      const canonical = getCanonicalExerciseKey(name, todaysType);
       const completedAt = log.completedAt ? new Date(log.completedAt).getTime() : parseWorkoutDate(log.date) || 0;
-      withDate.push({ name, completedAt });
+      const existing = byCanonical.get(canonical);
+      if (!existing || completedAt > existing.completedAt) {
+        byCanonical.set(canonical, { name, completedAt });
+      }
     });
-    withDate.sort((a, b) => b.completedAt - a.completedAt);
-    return withDate.map((x) => x.name);
+    return Array.from(byCanonical.values())
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .map((x) => x.name);
   }, [history, todaysType]);
 
   const overloadNudgeMap = useMemo(
