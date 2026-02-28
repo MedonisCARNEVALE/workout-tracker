@@ -821,7 +821,8 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
         }
       }
     }
-    onFinish(logs, { type: todaysType, variation }, abCompletion);
+    const abSkipped = !!injectedAb && !abCompletion;
+    onFinish(logs, { type: todaysType, variation }, abCompletion, { abSkipped });
     setInputs({});
     setSubstitutions({});
     setSubSetCount({});
@@ -1816,13 +1817,17 @@ export default function App() {
     setNext();
   }, [loading]);
 
-  const onFinish = async (logs, completed, abCompletion) => {
+  const onFinish = async (logs, completed, abCompletion, options) => {
     const normalizedSeed = seedData.map(normalizeHistoryLog);
     const userLogs = history.filter((log) => log.completedAt);
     const updatedUserLogs = [...userLogs, ...logs];
     const updated = [...normalizedSeed, ...updatedUserLogs];
     setHistory(updated);
     await AsyncStorage.setItem('workout_history', JSON.stringify(updatedUserLogs));
+    if (options?.abSkipped) {
+      setLastAbWorkout(null);
+      await AsyncStorage.removeItem(LAST_AB_WORKOUT_KEY);
+    }
     if (completed) {
       setTotalTonnage(computeTonnageFromLogs(logs));
       await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
