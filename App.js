@@ -172,7 +172,7 @@ const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
 const AB_TEMPLATES_KEY = 'workout_tracker_ab_templates';
 const LAST_AB_WORKOUT_KEY = 'workout_tracker_last_ab_workout';
-const ABS_SHOW_MIGRATION_KEY = 'workout_tracker_abs_show_migration_v1';
+const ABS_SHOW_MIGRATION_KEY = 'workout_tracker_abs_show_migration_v2';
 const IN_PROGRESS_WORKOUT_KEY = 'workout_tracker_in_progress';
 
 const DEFAULT_AB_TEMPLATES = {
@@ -199,7 +199,10 @@ const getNextAbType = (lastType) => {
   return 'A';
 };
 
-const shouldInjectAbWorkout = (lastAbDate) => getDaysSince(lastAbDate) >= 4;
+const shouldInjectAbWorkout = (lastAbDate) => {
+  if (lastAbDate == null || lastAbDate === '') return true;
+  return getDaysSince(lastAbDate) >= 4;
+};
 
 const formatWorkoutForShare = (type, variation, exercises, inputs, injectedWarmups, substitutions, subSetCount) => {
   const header = `🦍 Today's Ape Workout: ${type} (${variation})`;
@@ -495,8 +498,9 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
   }, [todaysType, variation, overrides]);
 
   const injectedAb = useMemo(() => {
-    if (!shouldInjectAbWorkout(lastAbWorkout?.date)) return null;
-    const nextType = getNextAbType(lastAbWorkout?.type);
+    const lastAbDate = lastAbWorkout?.date;
+    if (!shouldInjectAbWorkout(lastAbDate)) return null;
+    const nextType = getNextAbType(lastAbWorkout?.type ?? null);
     const template = abTemplates?.[nextType];
     if (!template) return null;
     let sets = (template.sets || []).map(s => ({ weight: String(s.weight ?? ''), reps: String(s.reps ?? '').trim() || '' }));
