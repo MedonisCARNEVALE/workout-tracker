@@ -537,6 +537,25 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
     return blocks;
   }, [exercisesToShow]);
 
+  const historyExercisesForType = useMemo(() => {
+    const typeLower = (todaysType || '').toLowerCase();
+    const seen = new Set();
+    const withDate = [];
+    (history || []).forEach((log) => {
+      if (!log.type || !log.exercise) return;
+      if (!log.type.toLowerCase().includes(typeLower)) return;
+      const name = (log.exercise || '').trim();
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const completedAt = log.completedAt ? new Date(log.completedAt).getTime() : parseWorkoutDate(log.date) || 0;
+      withDate.push({ name, completedAt });
+    });
+    withDate.sort((a, b) => b.completedAt - a.completedAt);
+    return withDate.map((x) => x.name);
+  }, [history, todaysType]);
+
   const overloadNudgeMap = useMemo(
     () => getOverloadNudgeMap(history, exercisesToShow),
     [history, exercisesToShow]
@@ -1032,6 +1051,26 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
               ))}
               <View style={styles.modalAddSection}>
                 <Text style={styles.modalSectionLabel}>Add exercise</Text>
+                {historyExercisesForType.length > 0 && (() => {
+                  const alreadyInWorkout = new Set((editingExercises || []).map((e) => (e.exercise || '').trim().toLowerCase()));
+                  const suggestions = historyExercisesForType.filter((name) => !alreadyInWorkout.has(name.toLowerCase()));
+                  if (suggestions.length === 0) return null;
+                  const addExercise = (name) => {
+                    setEditingExercises(prev => [...prev, { exercise: name.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }], isSupersetWithNext: false }]);
+                  };
+                  return (
+                    <View style={styles.modalHistorySuggestions}>
+                      <Text style={styles.modalHistorySuggestionsLabel}>From your {todaysType} history — tap to add</Text>
+                      <View style={styles.modalHistoryChips}>
+                        {suggestions.map((name) => (
+                          <TouchableOpacity key={name} style={styles.modalHistoryChip} onPress={() => addExercise(name)}>
+                            <Text style={styles.modalHistoryChipText} numberOfLines={1}>{name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })()}
                 <View style={styles.modalAddRow}>
                   <TextInput
                     style={styles.modalAddInput}
@@ -2142,6 +2181,11 @@ const styles = StyleSheet.create({
   targetRepsLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
   targetRepsInput: { width: 56, backgroundColor: '#1a1a1a', color: '#fff', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, fontWeight: '600' },
   modalAddSection: { marginTop: 8 },
+  modalHistorySuggestions: { marginBottom: 12 },
+  modalHistorySuggestionsLabel: { color: '#666', fontSize: 11, fontWeight: '600', marginBottom: 8, letterSpacing: 0.3 },
+  modalHistoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  modalHistoryChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
+  modalHistoryChipText: { color: '#CCFF00', fontSize: 14, fontWeight: '600', maxWidth: 160 },
   modalAddRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
   modalAddInput: { flex: 1, backgroundColor: '#111', color: '#fff', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#222', fontSize: 16 },
   modalAddBtn: { paddingVertical: 14, paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', justifyContent: 'center' },
