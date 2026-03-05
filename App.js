@@ -375,6 +375,37 @@ const WORKOUT_SEQUENCE = [
   { type: 'Push', variation: 'B' }, { type: 'Pull', variation: 'B' }, { type: 'Legs', variation: 'B' },
   { type: 'Push', variation: 'C' }, { type: 'Pull', variation: 'C' }, { type: 'Legs', variation: 'KOT' },
 ];
+
+const PUSH_VARIATIONS = ['A', 'B', 'C'];
+const PULL_VARIATIONS = ['A', 'B', 'C'];
+const LEGS_VARIATIONS = ['A', 'B', 'KOT'];
+
+function normalizeLogType(logType) {
+  const t = (logType || '').toLowerCase();
+  if (t.includes('push')) return 'Push';
+  if (t.includes('pull')) return 'Pull';
+  if (t.includes('leg') || t === 'kot') return 'Legs';
+  return null;
+}
+
+/** Count distinct completion dates per type (Push, Pull, Legs) from user logs. */
+function getCompletionCountByType(userLogs) {
+  const byType = { Push: new Set(), Pull: new Set(), Legs: new Set() };
+  (userLogs || []).filter((log) => log.completedAt).forEach((log) => {
+    const type = normalizeLogType(log.type);
+    if (type && byType[type]) byType[type].add(log.date);
+  });
+  return { Push: byType.Push.size, Pull: byType.Pull.size, Legs: byType.Legs.size };
+}
+
+/** Suggest variation for a type based on how many times they've done that type: 0→A, 1→B, 2→C (Legs: KOT). */
+function getVariationForType(type, completionCount) {
+  const count = completionCount ?? 0;
+  if (type === 'Push') return PUSH_VARIATIONS[count % PUSH_VARIATIONS.length];
+  if (type === 'Pull') return PULL_VARIATIONS[count % PULL_VARIATIONS.length];
+  if (type === 'Legs') return LEGS_VARIATIONS[count % LEGS_VARIATIONS.length];
+  return 'A';
+}
 const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
 const SKIPPED_WORKOUT_KEY = 'workout_tracker_skipped_workout';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
@@ -2006,9 +2037,13 @@ export default function App() {
 
   const onOverrideSuggestedWorkout = useCallback(async (workout) => {
     if (!workout?.type) return;
-    await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(workout));
-    setSuggestedWorkout(workout);
-  }, []);
+    const userLogs = history.filter((log) => log.completedAt);
+    const counts = getCompletionCountByType(userLogs);
+    const variation = getVariationForType(workout.type, counts[workout.type]);
+    const w = { type: workout.type, variation };
+    await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(w));
+    setSuggestedWorkout(w);
+  }, [history]);
 
   useEffect(() => {
     return () => { if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current); };
@@ -2074,22 +2109,27 @@ export default function App() {
     if (loading) return;
     const setNext = async () => {
       try {
+        const userLogs = history.filter((log) => log.completedAt);
+        const counts = getCompletionCountByType(userLogs);
         const [last, skipped] = await Promise.all([AsyncStorage.getItem(LAST_WORKOUT_KEY), AsyncStorage.getItem(SKIPPED_WORKOUT_KEY)]);
         const skippedObj = skipped ? JSON.parse(skipped) : null;
         if (skippedObj) {
-          setSuggestedWorkout(skippedObj);
+          const variation = getVariationForType(skippedObj.type, counts[skippedObj.type]);
+          setSuggestedWorkout({ type: skippedObj.type, variation });
           return;
         }
         const lastObj = last ? JSON.parse(last) : null;
         const idx = lastObj ? WORKOUT_SEQUENCE.findIndex(w => w.type === lastObj.type && w.variation === lastObj.variation) : -1;
         const nextIdx = idx < 0 ? 0 : (idx + 1) % WORKOUT_SEQUENCE.length;
-        setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
+        const nextType = WORKOUT_SEQUENCE[nextIdx].type;
+        const variation = getVariationForType(nextType, counts[nextType]);
+        setSuggestedWorkout({ type: nextType, variation });
       } catch (e) {
         setSuggestedWorkout(WORKOUT_SEQUENCE[0]);
       }
     };
     setNext();
-  }, [loading]);
+  }, [loading, history]);
 
   const onFinish = async (logs, completed, abCompletion, options) => {
     const normalizedSeed = seedData.map(normalizeHistoryLog);
@@ -2104,22 +2144,24 @@ export default function App() {
     }
     if (completed) {
       setTotalTonnage(computeTonnageFromLogs(logs));
+      const counts = getCompletionCountByType(updatedUserLogs);
       const prevLast = await AsyncStorage.getItem(LAST_WORKOUT_KEY);
       const prevObj = prevLast ? JSON.parse(prevLast) : null;
       const expectedNextIdx = prevObj ? (WORKOUT_SEQUENCE.findIndex(w => w.type === prevObj.type && w.variation === prevObj.variation) + 1) % WORKOUT_SEQUENCE.length : 0;
-      const expectedNext = WORKOUT_SEQUENCE[expectedNextIdx];
+      const expectedNextType = WORKOUT_SEQUENCE[expectedNextIdx]?.type;
       const skippedStorage = await AsyncStorage.getItem(SKIPPED_WORKOUT_KEY);
       const skippedObj = skippedStorage ? JSON.parse(skippedStorage) : null;
       if (completed.type === skippedObj?.type) {
         await AsyncStorage.removeItem(SKIPPED_WORKOUT_KEY);
-        const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
-        setSuggestedWorkout(WORKOUT_SEQUENCE[(idx + 1) % WORKOUT_SEQUENCE.length]);
-      } else if (expectedNext && completed.type !== expectedNext.type) {
-        await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(expectedNext));
-        setSuggestedWorkout(expectedNext);
+        const nextType = WORKOUT_SEQUENCE[(WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation) + 1) % WORKOUT_SEQUENCE.length]?.type;
+        if (nextType) setSuggestedWorkout({ type: nextType, variation: getVariationForType(nextType, counts[nextType]) });
+      } else if (expectedNextType && completed.type !== expectedNextType) {
+        const skipped = { type: expectedNextType, variation: getVariationForType(expectedNextType, counts[expectedNextType]) };
+        await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(skipped));
+        setSuggestedWorkout(skipped);
       } else {
-        const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
-        setSuggestedWorkout(WORKOUT_SEQUENCE[(idx + 1) % WORKOUT_SEQUENCE.length]);
+        const nextType = WORKOUT_SEQUENCE[(WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation) + 1) % WORKOUT_SEQUENCE.length]?.type;
+        if (nextType) setSuggestedWorkout({ type: nextType, variation: getVariationForType(nextType, counts[nextType]) });
       }
       await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
       setLastCompletedAt(logs[0]?.completedAt ?? null);
