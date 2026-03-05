@@ -727,10 +727,8 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
   }, [exercisesToShow]);
 
   const historyExercisesForType = useMemo(() => {
-    const main = getHistoryExercisesForType(history, todaysType);
-    if (!suggestAlsoType || suggestAlsoType === todaysType) return main;
-    const extra = getHistoryExercisesForType(history, suggestAlsoType);
-    return [...main, ...extra];
+    if (suggestAlsoType) return getHistoryExercisesForType(history, suggestAlsoType);
+    return getHistoryExercisesForType(history, todaysType);
   }, [history, todaysType, suggestAlsoType]);
 
   const overloadNudgeMap = useMemo(
@@ -1237,7 +1235,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                   };
                   return (
                     <View style={styles.modalHistorySuggestions}>
-                      <Text style={styles.modalHistorySuggestionsLabel}>From your {todaysType} history — tap to add</Text>
+                      <Text style={styles.modalHistorySuggestionsLabel}>From your {suggestAlsoType || todaysType} history — tap to add</Text>
                       <View style={styles.modalFilterRow}>
                         <Text style={styles.modalFilterLabel}>Also show:</Text>
                         {otherTypes.map((t) => {
