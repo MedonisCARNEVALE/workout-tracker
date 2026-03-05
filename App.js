@@ -553,7 +553,7 @@ const getDistinctSessionDates = (data, typeKey, count) => {
 };
 
 // --- TODAY SCREEN COMPONENT ---
-const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer, initialInProgress }) => {
+const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, overrides, onSaveOverrides, abTemplates, lastAbWorkout, showSuccessScreen, onDismissSuccess, onStartTwoADay, onUndoLastSession, canUndo, totalTonnage, onProgressUpdate, startRestTimer, cancelRestTimer, initialInProgress, onOverrideSuggestedWorkout }) => {
   const [todaysType, setTodaysType] = useState(initialType || 'Push');
   const [variation, setVariation] = useState(initialVariation || 'A');
   const [inputs, setInputs] = useState({});
@@ -1092,6 +1092,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
             onPress={() => {
               setTodaysType(t => {
                 const next = t === 'Push' ? 'Pull' : t === 'Pull' ? 'Legs' : 'Push';
+                if (next === 'Legs' && onOverrideSuggestedWorkout) onOverrideSuggestedWorkout({ type: 'Legs', variation: 'A' });
                 return next;
               });
               // Reset variation to A whenever type changes
@@ -2003,6 +2004,12 @@ export default function App() {
     }, 1000);
   }, []);
 
+  const onOverrideSuggestedWorkout = useCallback(async (workout) => {
+    if (!workout?.type) return;
+    await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(workout));
+    setSuggestedWorkout(workout);
+  }, []);
+
   useEffect(() => {
     return () => { if (restTimerIntervalRef.current) clearInterval(restTimerIntervalRef.current); };
   }, []);
@@ -2185,7 +2192,7 @@ export default function App() {
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" />
-        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={onDismissSuccess} onStartTwoADay={onStartTwoADay} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} initialInProgress={inProgressSnapshot} /> : <HistoryScreen history={history} />}</View>
+        <View style={{flex:1}}>{tab === 'Today' ? <TodayScreen history={history} onFinish={onFinish} initialType={suggestedWorkout?.type} initialVariation={suggestedWorkout?.variation} overrides={overrides} onSaveOverrides={onSaveOverrides} abTemplates={abTemplates} lastAbWorkout={lastAbWorkout} showSuccessScreen={showSuccessScreen} onDismissSuccess={onDismissSuccess} onStartTwoADay={onStartTwoADay} onUndoLastSession={onUndoLastSession} canUndo={!!lastCompletedAt} totalTonnage={totalTonnage} onProgressUpdate={setTodayProgress} startRestTimer={startRestTimer} cancelRestTimer={cancelRestTimer} initialInProgress={inProgressSnapshot} onOverrideSuggestedWorkout={onOverrideSuggestedWorkout} /> : <HistoryScreen history={history} />}</View>
         {tab === 'Today' && (restTimerSeconds != null || (todayProgress != null && todayProgress.completed >= 1)) ? (
           <Animated.View style={[styles.stickyBottomWrap, { bottom: stickyBottomAnim }]}>
             {restTimerSeconds != null ? (
