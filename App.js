@@ -104,15 +104,152 @@ function getCanonicalExerciseKey(name, workoutType) {
     if (/front.*raise|raise.*front/i.test(n)) return 'front raise';
   }
   if (t === 'pull') {
-    // Pull: add grouping later
+    // — Rows: BB vs DB vs machine/cable (order = specific first)
+    if (/laying.*(db|dumbbell).*row|(db|dumbbell).*row.*laying|reverse bench.*row/i.test(n)) return 'db row laying';
+    if (/standing.*(bb|barbell)|(bb|barbell).*standing.*row|bb row|barbell row/i.test(n)) return 'bb row';
+    if (/high (pull|row)|(pull|row).*high|sitting.*high pull/i.test(n) && /machine|rope|row|pull/i.test(n)) return 'high row machine';
+    if (/low (pull|row)|(pull|row).*low|sitting.*low pull/i.test(n)) return 'low row machine';
+    if (/sitting.*(row|pull)|(row|pull).*machine|row machine|back row|pully|pulling rows/i.test(n)) return 'seated row machine';
+    if (/wide.*row|row.*wide/i.test(n)) return 'wide row';
+    if (/rope.*(back|row)|(back|row).*rope|some.*rope.*back/i.test(n)) return 'cable rope row';
+    // — Pull-ups / lat pulldown
+    if (/close grip.*(pull|pulldown)|(pull|pulldown).*close|supinated.*pull/i.test(n)) return 'close grip lat pulldown';
+    if (/wide.*(pull|pull-up|pulldown)|(pull|pull-up|pulldown).*wide/i.test(n)) return 'wide pull up';
+    if (/chin up|chin-up/i.test(n)) return 'chin up';
+    if (/\b(pull up|pull-up|pulls? up)\b|reg(ular)?\s*width\s*pull/i.test(n)) return 'pull up';
+    if (/lat.*(pull|rope)|(pull|pulldown).*lat|rope.*pull\s*down/i.test(n)) return 'lat pulldown';
+    // — Curls: preacher, hammer, stretch, ez bar, rope, 21s
+    if (/21s\b/i.test(n)) return 'bicep 21s';
+    if (/preacher|preachers/i.test(n)) return 'preacher curl';
+    if (/hammer.*curl|curl.*hammer|rope hammer/i.test(n)) return 'hammer curl';
+    if (/stretch.*curl|curl.*stretch|sitting stretch/i.test(n)) return 'stretch curl';
+    if (/ez bar.*curl|negative curl|curl.*ez/i.test(n)) return 'ez bar curl';
+    if (/overhead.*(bar)?\s*curl|sitting overhead.*curl/i.test(n)) return 'overhead curl';
+    if (/standing.*rope.*curl|rope.*curl|sitting.*wide.*curl|wide.*(db)?\s*curl/i.test(n)) return 'cable/rope curl';
+    if (/\bcurls?\b/i.test(n)) return 'curls';
+    // — Face pulls / rear delt
+    if (/face pull|facepull/i.test(n)) return 'face pull';
+    if (/\bt\s*raises?\b|t-?raise/i.test(n)) return 't raise';
+    // — Shrugs, deadlift
+    if (/shrug/i.test(n)) return 'shrugs';
+    if (/deadlift/i.test(n)) return 'deadlift';
   }
   if (t === 'legs' || t.includes('leg')) {
-    // Legs: add grouping later
+    // — Squats
+    if (/slant(-?\s*board)?\s*squat|slanted\s*squat|slantboard/i.test(n)) return 'slantboard squat';
+    if (/front\s*squat/i.test(n)) return 'front squat';
+    if (/split\s*squat/i.test(n)) return 'split squat';
+    if (/pistol\s*squat|seated\s*pistol/i.test(n)) return 'pistol squat';
+    if (/hold\s*squat|squat.*hold|6-8\s*sec/i.test(n)) return 'hold squat';
+    if (/squat\s*jump|seated\s*squat\s*jump|sitting\s*squat\s*jump/i.test(n)) return 'squat jump';
+    if (/\bsquats?\b/i.test(n)) return 'squat';
+    // — Leg press, leg extension, leg curl
+    if (/seated\s*leg\s*(press|push)|leg\s*(press|push)/i.test(n)) return 'leg press';
+    if (/seated\s*leg\s*extension|leg\s*extension/i.test(n)) return 'leg extension';
+    if (/prone\s*leg\s*curl|seated\s*leg\s*curl|leg\s*curl\s*machine|leg\s*curls/i.test(n)) return 'leg curl';
+    if (/hammy|hamstring/i.test(n)) return 'hamstring curl';
+    if (/nordic/i.test(n)) return 'nordics';
+    // — Calf
+    if (/kot\s*calf|single\s*leg\s*kot\s*calf|knees?\s*over\s*toes/i.test(n)) return 'kot calf raise';
+    if (/seated\s*calf|calf\s*raise\s*machine|calf\s*press/i.test(n)) return 'seated calf raise';
+    if (/calf\s*raise|calf\s*raises/i.test(n)) return 'calf raise';
+    // — Sleds, tib, wall, misc leg
+    if (/backwards?\s*sled|sleds?\s*backward|sled\s*only/i.test(n)) return 'sled backwards';
+    if (/\bsleds?\b/i.test(n)) return 'sleds';
+    if (/tib\s*(bar)?\s*raise|tib\s*raise/i.test(n)) return 'tib raise';
+    if (/wall\s*sit/i.test(n)) return 'wall sit';
+    if (/kneeling\s*ankle|ankle\s*stretch/i.test(n)) return 'kneeling ankle stretch';
+    if (/lateral\s*explosive|pogo\s*jump|seated\s*pistol\s*jump/i.test(n)) return 'explosive leg';
+    // — Shoulders (Legs day = Heavy Legs and Shoulders)
+    if (/\blvt\b/i.test(n)) return 'lvt';
+    if (/overhead\s*(db|dumbbell)?\s*press|ohp|standing.*shoulder\s*press|standing.*db\s*press/i.test(n)) return 'overhead press';
+    if (/overhead\s*press\s*machine|press\s*machine/i.test(n) && /shoulder|overhead/i.test(n)) return 'overhead press machine';
+    if (/forward\s*shoulder|forward\s*raise|db\s*front\s*raise|front\s*raise/i.test(n)) return 'front raise';
+    if (/lateral\s*raise|lateral\s*side\s*raise|side\s*deal?t\s*machine/i.test(n)) return 'lateral raise';
+    if (/bb\s*raise|barbell\s*raise/i.test(n)) return 'bb raise';
+    if (/rope\s*downward\s*fly|downward\s*fly/i.test(n)) return 'rope downward fly';
+    if (/\bt\s*raises?\b|t-?raise|sleds?\/t\s*raise/i.test(n)) return 't raise';
+    if (/shrug/i.test(n)) return 'shrugs';
+  }
+  if (t === 'abs') {
+    // Abs: no grouping for now; could add later (e.g. decline abs, oblique machine)
+    return n || raw.toLowerCase();
   }
   return n || raw.toLowerCase();
 }
 
-/** Build a notes string from seed_data.json record format (sets array) so history lookups work. */
+/** Exclude junk or wrong-type entries from the "Add exercise" history suggestions. */
+function isExcludedSuggestion(exerciseName, workoutType) {
+  const n = (exerciseName || '').trim().toLowerCase();
+  if (!n) return true;
+  // Junk / non-exercise entries
+  if (/\(notes|forgot to wr/i.test(n)) return true;
+  if (/\bfull body\b/i.test(n)) return true;
+  if (/\bwarm up\b/i.test(n)) return true; // e.g. "Kick backs warm up"
+  if (/\bfly cables\b|^cables? fly$/i.test(n)) return true; // "Fly cables" removed per user
+  // When showing Push list: hide Legs/Pull exercises that snuck in via bad log type
+  const t = (workoutType || '').toLowerCase();
+  if (t === 'push') {
+    if (/\bsquats?\b/i.test(n)) return true;
+    if (/\bsleds?\b/i.test(n)) return true;
+    if (/hammy|hamstring.*machine|hamstring machine/i.test(n)) return true;
+    if (/leg extension/i.test(n)) return true;
+    if (/\bt\s*raises?\b/i.test(n)) return true;
+  }
+  if (t === 'pull') {
+    if (/chest machine|mid pause.*press|db press/i.test(n)) return true;
+    if (/overhead.*rope.*extension|tricep.*pull|skullcrusher|skull crusher/i.test(n)) return true;
+    if (/\bsleds?\b/i.test(n)) return true;
+    if (/single arm.*extension superset|standing barbell$|standing bb$/i.test(n)) return true;
+    // T raises: keep in Pull (and Legs) — only excluded from Push
+  }
+  if (t === 'legs' || t.includes('leg')) {
+    if (/bb incline|bb press|bench\b|mid pause.*press|chest|db press/i.test(n)) return true;
+    if (/skullcrusher|tricep.*pull|overhead.*rope.*extension/i.test(n)) return true;
+    if (/\bcurls?\b/i.test(n) && !/leg\s*curl|hamstring/i.test(n)) return true;
+    if (/pull\s*up|pulling\s*row|chin\s*up/i.test(n)) return true;
+    if (/basketball|running|rockers|ladder|i split/i.test(n)) return true;
+    if (/marty\s*st|st\s*louis/i.test(n)) return true;
+    // T raises: keep (valid for legs and shoulders). Stair stepper, hangs, wolverines: keep in Legs list.
+  }
+  return false;
+}
+
+/** True if exercise name looks like an ab exercise (for Abs history list — abs is logged under main workout type). */
+function isAbExercise(name) {
+  const n = (name || '').trim().toLowerCase();
+  return /\babs?\b|crunch|decline.*weighted|oblique|leg raise|plank|sit-?up|hanging|ab wheel|rope crunch|cable crunch|pallof|dead bug|bird dog|v-?up|bicycle|mountain climber|toe (to|2) bar|weighted abs/i.test(n);
+}
+
+/** Build deduped, sorted list of exercise names from history for one workout type (for Add exercise modal). */
+function getHistoryExercisesForType(history, workoutType) {
+  const typeLower = (workoutType || '').toLowerCase();
+  const byCanonical = new Map();
+  const isAbs = typeLower === 'abs';
+  const isLegs = typeLower === 'legs';
+  (history || []).forEach((log) => {
+    if (!log.exercise) return;
+    const name = (log.exercise || '').trim();
+    if (!name || isExcludedSuggestion(name, workoutType)) return;
+    if (isAbs) {
+      if (!isAbExercise(name)) return;
+    } else if (isLegs) {
+      const logType = (log.type || '').toLowerCase();
+      if (!logType || (!logType.includes('leg') && logType !== 'kot')) return;
+    } else {
+      if (!log.type || !log.type.toLowerCase().includes(typeLower)) return;
+    }
+    const canonical = getCanonicalExerciseKey(name, workoutType);
+    const completedAt = log.completedAt ? new Date(log.completedAt).getTime() : parseWorkoutDate(log.date) || 0;
+    const existing = byCanonical.get(canonical);
+    if (!existing || completedAt > existing.completedAt) {
+      byCanonical.set(canonical, { name, completedAt });
+    }
+  });
+  return Array.from(byCanonical.values())
+    .sort((a, b) => b.completedAt - a.completedAt)
+    .map((x) => x.name);
+}
 const buildNotesFromSeedSets = (record) => {
   if (!record || !Array.isArray(record.sets) || record.sets.length === 0) return '';
   const parts = record.sets.map((s) => {
@@ -408,6 +545,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingExercises, setEditingExercises] = useState([]);
   const [newExerciseName, setNewExerciseName] = useState('');
+  const [suggestAlsoType, setSuggestAlsoType] = useState(null); // 'Push' | 'Pull' | 'Legs' | null — only one extra type at a time
   const [shoulderWarmupDone, setShoulderWarmupDone] = useState(false);
   const [injectedWarmups, setInjectedWarmups] = useState({}); // { exerciseName: [ { weight, reps }, ... ] }
   const inputsRef = useRef(inputs);
@@ -589,24 +727,11 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
   }, [exercisesToShow]);
 
   const historyExercisesForType = useMemo(() => {
-    const typeLower = (todaysType || '').toLowerCase();
-    const byCanonical = new Map();
-    (history || []).forEach((log) => {
-      if (!log.type || !log.exercise) return;
-      if (!log.type.toLowerCase().includes(typeLower)) return;
-      const name = (log.exercise || '').trim();
-      if (!name) return;
-      const canonical = getCanonicalExerciseKey(name, todaysType);
-      const completedAt = log.completedAt ? new Date(log.completedAt).getTime() : parseWorkoutDate(log.date) || 0;
-      const existing = byCanonical.get(canonical);
-      if (!existing || completedAt > existing.completedAt) {
-        byCanonical.set(canonical, { name, completedAt });
-      }
-    });
-    return Array.from(byCanonical.values())
-      .sort((a, b) => b.completedAt - a.completedAt)
-      .map((x) => x.name);
-  }, [history, todaysType]);
+    const main = getHistoryExercisesForType(history, todaysType);
+    if (!suggestAlsoType || suggestAlsoType === todaysType) return main;
+    const extra = getHistoryExercisesForType(history, suggestAlsoType);
+    return [...main, ...extra];
+  }, [history, todaysType, suggestAlsoType]);
 
   const overloadNudgeMap = useMemo(
     () => getOverloadNudgeMap(history, exercisesToShow),
@@ -1103,23 +1228,36 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
               ))}
               <View style={styles.modalAddSection}>
                 <Text style={styles.modalSectionLabel}>Add exercise</Text>
-                {historyExercisesForType.length > 0 && (() => {
+                {(() => {
                   const alreadyInWorkout = new Set((editingExercises || []).map((e) => (e.exercise || '').trim().toLowerCase()));
-                  const suggestions = historyExercisesForType.filter((name) => !alreadyInWorkout.has(name.toLowerCase()));
-                  if (suggestions.length === 0) return null;
+                  const suggestions = (historyExercisesForType || []).filter((name) => !alreadyInWorkout.has(name.toLowerCase()));
+                  const otherTypes = ['Push', 'Pull', 'Legs', 'Abs'].filter((t) => t !== todaysType);
                   const addExercise = (name) => {
                     setEditingExercises(prev => [...prev, { exercise: name.trim(), note: '', targetReps: '', sets: [{ weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }, { weight: '', reps: '', modifier: null }], isSupersetWithNext: false }]);
                   };
                   return (
                     <View style={styles.modalHistorySuggestions}>
                       <Text style={styles.modalHistorySuggestionsLabel}>From your {todaysType} history — tap to add</Text>
-                      <View style={styles.modalHistoryChips}>
-                        {suggestions.map((name) => (
-                          <TouchableOpacity key={name} style={styles.modalHistoryChip} onPress={() => addExercise(name)}>
-                            <Text style={styles.modalHistoryChipText} numberOfLines={1}>{name}</Text>
-                          </TouchableOpacity>
-                        ))}
+                      <View style={styles.modalFilterRow}>
+                        <Text style={styles.modalFilterLabel}>Also show:</Text>
+                        {otherTypes.map((t) => {
+                          const isOn = suggestAlsoType === t;
+                          return (
+                            <TouchableOpacity key={t} style={[styles.modalFilterChip, isOn && styles.modalFilterChipOn]} onPress={() => setSuggestAlsoType((v) => v === t ? null : t)}>
+                              <Text style={[styles.modalFilterChipText, isOn && styles.modalFilterChipTextOn]}>{t}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
                       </View>
+                      {suggestions.length > 0 && (
+                        <View style={styles.modalHistoryChips}>
+                          {suggestions.map((name) => (
+                            <TouchableOpacity key={name} style={styles.modalHistoryChip} onPress={() => addExercise(name)}>
+                              <Text style={styles.modalHistoryChipText} numberOfLines={1}>{name}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
                     </View>
                   );
                 })()}
@@ -2235,6 +2373,12 @@ const styles = StyleSheet.create({
   modalAddSection: { marginTop: 8 },
   modalHistorySuggestions: { marginBottom: 12 },
   modalHistorySuggestionsLabel: { color: '#666', fontSize: 11, fontWeight: '600', marginBottom: 8, letterSpacing: 0.3 },
+  modalFilterRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  modalFilterLabel: { color: '#666', fontSize: 12, marginRight: 4 },
+  modalFilterChip: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
+  modalFilterChipOn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', borderColor: THEME.accent },
+  modalFilterChipText: { color: '#888', fontSize: 13, fontWeight: '600' },
+  modalFilterChipTextOn: { color: THEME.accent },
   modalHistoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modalHistoryChip: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
   modalHistoryChipText: { color: '#CCFF00', fontSize: 14, fontWeight: '600', maxWidth: 160 },
