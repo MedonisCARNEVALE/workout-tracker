@@ -28,14 +28,27 @@ const stopTimerSpeech = () => {
   }
 };
 
+/** Parse notes to sets. "fail" = go to failure (target); we still store/display actual rep count when logged. */
 const parseNotesToSets = (notes) => {
   const part = String(notes || '').split('|')[0].trim();
   return part.split(',').map(s => s.trim()).filter(Boolean).map(segment => {
     const [w, r] = segment.split('x').map(x => x.trim());
     const weight = w === 'BW' || w === '' || !w ? 0 : parseFloat(w) || 0;
-    const reps = parseInt(r, 10) || 0;
+    const rLower = (r || '').toLowerCase();
+    const reps = rLower === 'fail' || rLower === '' || rLower === 'failure' ? 'fail' : (parseInt(r, 10) || 0);
     return { weight, reps };
   });
+};
+
+/** Format notes for display. "Fail" = go to failure (do as many as you can). When no rep count stored, show "to failure". */
+const formatNotesForDisplay = (notes) => {
+  const part = String(notes || '').split('|')[0].trim();
+  return part.split(',').map(s => s.trim()).filter(Boolean).map(segment => {
+    const [w, r] = segment.split('x').map(x => x.trim());
+    const hasReps = (r || '').trim() !== '' && (r || '').toLowerCase() !== 'fail' && (r || '').toLowerCase() !== 'failure';
+    const repsDisplay = hasReps ? r : 'to failure';
+    return `${w || '0'} x ${repsDisplay}`;
+  }).join(', ');
 };
 
 // Normalize a set from seed or override to { weight, reps, modifier } (modifier: null | 'drop' | 'negative')
@@ -60,6 +73,12 @@ const normalizeExerciseSets = (ex) => {
 };
 
 const normalizeExerciseName = (name) => (name || '').trim().toLowerCase();
+
+/** Fix autocorrect typo: "tie" -> "tri" (triceps) in exercise names. Use for display and when saving. */
+const fixTieToTri = (name) => (name || '').replace(/\btie\b/gi, 'tri');
+
+/** Display "Downward" as "Downward cable fly" when it's just that word. */
+const fixDownwardDisplay = (name) => ((name || '').trim().toLowerCase() === 'downward' ? 'Downward cable fly' : name);
 
 /** For "Add exercise" history list: map variations to one canonical key per movement. */
 function getCanonicalExerciseKey(name, workoutType) {
@@ -289,10 +308,10 @@ const getLastLogForExercise = (history, exerciseName) => {
 const allSetsMetTarget = (sets, targetReps) => {
   if (!sets.length) return false;
   const targetStr = String(targetReps || '').trim().toLowerCase();
-  if (targetStr === 'fail' || targetStr === '') return sets.some(s => s.reps > 0);
+  if (targetStr === 'fail' || targetStr === 'failure' || targetStr === '') return sets.some(s => s.reps === 'fail' || s.reps > 0);
   const targetNum = parseInt(targetReps, 10);
-  if (isNaN(targetNum)) return sets.some(s => s.reps > 0);
-  return sets.every(s => s.reps >= targetNum);
+  if (isNaN(targetNum)) return sets.some(s => s.reps === 'fail' || s.reps > 0);
+  return sets.every(s => s.reps === 'fail' || s.reps >= targetNum);
 };
 
 const getMaxWeightByExercise = (history) => {
@@ -315,7 +334,7 @@ const computeTonnageFromLogs = (logs) => {
     const sets = parseNotesToSets(log.notes);
     sets.forEach((s) => {
       const w = s.weight === 'BW' || s.weight === 0 ? 0 : Number(s.weight) || 0;
-      const r = Number(s.reps) || 0;
+      const r = s.reps === 'fail' ? 0 : (Number(s.reps) || 0);
       total += w * r;
     });
   });
@@ -357,6 +376,7 @@ const WORKOUT_SEQUENCE = [
   { type: 'Push', variation: 'C' }, { type: 'Pull', variation: 'C' }, { type: 'Legs', variation: 'KOT' },
 ];
 const LAST_WORKOUT_KEY = 'workout_tracker_last_completed';
+const SKIPPED_WORKOUT_KEY = 'workout_tracker_skipped_workout';
 const OVERRIDES_KEY = 'workout_tracker_overrides';
 const AB_TEMPLATES_KEY = 'workout_tracker_ab_templates';
 const LAST_AB_WORKOUT_KEY = 'workout_tracker_last_ab_workout';
@@ -977,7 +997,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
       return {
         date: format(new Date(), 'MM/dd/yy'),
         completedAt,
-        exercise: loggedName,
+        exercise: fixTieToTri(loggedName),
         notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : '') + (abs ? ' (Abs Done)' : ''),
         weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
         type: currentWorkout.type,
@@ -1012,7 +1032,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
           logs.push({
             date: format(new Date(), 'MM/dd/yy'),
             completedAt,
-            exercise: substitutions[abItem.exercise] ?? abItem.exercise,
+            exercise: fixTieToTri(substitutions[abItem.exercise] ?? abItem.exercise),
             notes: setArray.join(', ') + (ex.cues ? ` | ${ex.cues}` : ''),
             weight: ex.sets?.['0']?.weight === 'BW' ? 0 : getWeight(setArray[0] || ''),
             type: currentWorkout.type,
@@ -1182,12 +1202,15 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                         <Text style={styles.targetRepsLabel}>Target reps</Text>
                         <TextInput
                           style={styles.targetRepsInput}
-                          placeholder="e.g. 8"
+                          placeholder="e.g. 8 or failure"
                           placeholderTextColor="#A0A0A0"
                           value={ex.targetReps}
                           onChangeText={(v) => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: v } : e))}
-                          keyboardType="number-pad"
+                          keyboardType="decimal-pad"
                         />
+                        <TouchableOpacity style={[styles.targetRepsFailureChip, (ex.targetReps || '').toLowerCase() === 'fail' || (ex.targetReps || '').toLowerCase() === 'failure' ? styles.targetRepsFailureChipOn : null]} onPress={() => setEditingExercises(prev => prev.map((e, i) => i === idx ? { ...e, targetReps: (e.targetReps || '').toLowerCase() === 'fail' ? '' : 'fail' } : e))}>
+                          <Text style={[(ex.targetReps || '').toLowerCase() === 'fail' || (ex.targetReps || '').toLowerCase() === 'failure' ? styles.targetRepsFailureChipTextOn : styles.targetRepsFailureChipText]}>Failure</Text>
+                        </TouchableOpacity>
                       </View>
                     </View>
                     <View style={styles.templateSetModifiersRow}>
@@ -1301,7 +1324,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
             {isSuperset && <Text style={styles.supersetTag}>SUPERSET</Text>}
             {block.indices.map((exIdx) => {
           const item = exercisesToShow[exIdx];
-          const displayName = substitutions[item.exercise] ?? item.exercise;
+          const displayName = fixDownwardDisplay(fixTieToTri(substitutions[item.exercise] ?? item.exercise));
           const isSubbed = !!substitutions[item.exercise];
           const warmUpCount = (injectedWarmups[item.exercise] || []).length;
           const workingSetCount = isSubbed ? (subSetCount[item.exercise] ?? 1) : (item.sets || []).length;
@@ -1370,7 +1393,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                 </View>
               </View>
             )}
-            {(lastLogByExercise[item.exercise]?.log?.notes || item.note) && !isSubbed ? <Text style={styles.prevNote}>“{lastLogByExercise[item.exercise]?.log?.notes || item.note}”</Text> : null}
+            {(lastLogByExercise[item.exercise]?.log?.notes || item.note) && !isSubbed ? <Text style={styles.prevNote}>“{formatNotesForDisplay(lastLogByExercise[item.exercise]?.log?.notes || item.note)}"</Text> : null}
             {effectiveSetIndices.map((setIdx) => {
               const isWarmup = setIdx < warmUpCount;
               const isMarty = item.exercise === 'Marty St Louis';
@@ -1405,11 +1428,11 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                       )}
                       {isPrSet && <Text style={styles.prBadge}>👑 NEW PR</Text>}
                     </View>
-                    {!isWarmup && overloadNudgeMap[item.exercise] ? (
+                    {!isWarmup && !isSpecialSet && (overloadNudgeMap[item.exercise] ? (
                       <Text style={styles.lastStatsOverload}>Target: {overloadNudgeMap[item.exercise].targetWeight} lbs 📈</Text>
                     ) : prevSet ? (
-                      <Text style={styles.lastStats}>Last: {prevSet.weight || 'BW'} × {prevSet.reps}</Text>
-                    ) : null}
+                      <Text style={styles.lastStats}>Last: {prevSet.weight || 'BW'} × {prevSet.reps === 'fail' || prevSet.reps === '' || (prevSet.reps === 0 && prevSet.weight) ? '—' : prevSet.reps}</Text>
+                    ) : null)}
                   </View>
                   <View style={styles.inputGroup}>
                     {isSpecialSet ? (
@@ -1435,7 +1458,7 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                           style={styles.dualInput} 
                           placeholder="Lbs" 
                           placeholderTextColor="#A0A0A0" 
-                          keyboardType="number-pad"
+                          keyboardType="decimal-pad"
                           value={inputs[item.exercise]?.sets?.[setIdx]?.weight || ''}
                           onChangeText={v => updateSetInput(item.exercise, setIdx, 'weight', v)}
                         />
@@ -1449,9 +1472,9 @@ const TodayScreenInner = ({ history, onFinish, initialType, initialVariation, ov
                     <View style={styles.repsInputWrapper}>
                       <TextInput 
                         style={[styles.dualInput, isMarty && styles.dualInputFullWidth]} 
-                        placeholder={item.targetReps ? `Reps (${item.targetReps})` : 'Reps'} 
+                        placeholder={item.targetReps ? (String(item.targetReps).toLowerCase() === 'fail' || String(item.targetReps).toLowerCase() === 'failure' ? 'Reps (to failure)' : `Reps (${item.targetReps})`) : 'Reps'} 
                         placeholderTextColor="#A0A0A0" 
-                        keyboardType="number-pad"
+                        keyboardType="decimal-pad"
                         value={inputs[item.exercise]?.sets?.[setIdx]?.reps || ''}
                         onChangeText={v => updateSetInput(item.exercise, setIdx, 'reps', v)}
                       onBlur={() => {
@@ -1882,7 +1905,7 @@ const HistoryScreenInner = ({ history }) => {
             </Text>
             {item.data.map((log, i) => (
               <View key={i} style={styles.logLine}>
-                <Text style={styles.logExercise}>{log.exercise}</Text>
+                <Text style={styles.logExercise}>{fixDownwardDisplay(fixTieToTri(log.exercise))}</Text>
                 <Text style={styles.logNotes}>{log.notes || (log.sets ? log.sets.map(s => `${s.weight || 'BW'}x${s.reps}`).join(', ') : '')}</Text>
               </View>
             ))}
@@ -2044,7 +2067,12 @@ export default function App() {
     if (loading) return;
     const setNext = async () => {
       try {
-        const last = await AsyncStorage.getItem(LAST_WORKOUT_KEY);
+        const [last, skipped] = await Promise.all([AsyncStorage.getItem(LAST_WORKOUT_KEY), AsyncStorage.getItem(SKIPPED_WORKOUT_KEY)]);
+        const skippedObj = skipped ? JSON.parse(skipped) : null;
+        if (skippedObj) {
+          setSuggestedWorkout(skippedObj);
+          return;
+        }
         const lastObj = last ? JSON.parse(last) : null;
         const idx = lastObj ? WORKOUT_SEQUENCE.findIndex(w => w.type === lastObj.type && w.variation === lastObj.variation) : -1;
         const nextIdx = idx < 0 ? 0 : (idx + 1) % WORKOUT_SEQUENCE.length;
@@ -2069,10 +2097,24 @@ export default function App() {
     }
     if (completed) {
       setTotalTonnage(computeTonnageFromLogs(logs));
+      const prevLast = await AsyncStorage.getItem(LAST_WORKOUT_KEY);
+      const prevObj = prevLast ? JSON.parse(prevLast) : null;
+      const expectedNextIdx = prevObj ? (WORKOUT_SEQUENCE.findIndex(w => w.type === prevObj.type && w.variation === prevObj.variation) + 1) % WORKOUT_SEQUENCE.length : 0;
+      const expectedNext = WORKOUT_SEQUENCE[expectedNextIdx];
+      const skippedStorage = await AsyncStorage.getItem(SKIPPED_WORKOUT_KEY);
+      const skippedObj = skippedStorage ? JSON.parse(skippedStorage) : null;
+      if (completed.type === skippedObj?.type) {
+        await AsyncStorage.removeItem(SKIPPED_WORKOUT_KEY);
+        const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
+        setSuggestedWorkout(WORKOUT_SEQUENCE[(idx + 1) % WORKOUT_SEQUENCE.length]);
+      } else if (expectedNext && completed.type !== expectedNext.type) {
+        await AsyncStorage.setItem(SKIPPED_WORKOUT_KEY, JSON.stringify(expectedNext));
+        setSuggestedWorkout(expectedNext);
+      } else {
+        const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
+        setSuggestedWorkout(WORKOUT_SEQUENCE[(idx + 1) % WORKOUT_SEQUENCE.length]);
+      }
       await AsyncStorage.setItem(LAST_WORKOUT_KEY, JSON.stringify(completed));
-      const idx = WORKOUT_SEQUENCE.findIndex(w => w.type === completed.type && w.variation === completed.variation);
-      const nextIdx = (idx + 1) % WORKOUT_SEQUENCE.length;
-      setSuggestedWorkout(WORKOUT_SEQUENCE[nextIdx]);
       setLastCompletedAt(logs[0]?.completedAt ?? null);
       setLastCompletedWorkout(completed);
       setShowSuccessScreen(true);
@@ -2365,9 +2407,13 @@ const styles = StyleSheet.create({
   stepperBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#222', borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
   stepperBtnText: { color: '#CCFF00', fontSize: 18, fontWeight: 'bold', lineHeight: 20 },
   stepperValue: { color: '#fff', fontSize: 15, fontWeight: 'bold', minWidth: 24, textAlign: 'center' },
-  targetRepsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  targetRepsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   targetRepsLabel: { color: '#888', fontSize: 12, fontWeight: '600' },
   targetRepsInput: { width: 56, backgroundColor: '#1a1a1a', color: '#fff', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', fontSize: 16, fontWeight: '600' },
+  targetRepsFailureChip: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
+  targetRepsFailureChipOn: { backgroundColor: 'rgba(204, 255, 0, 0.15)', borderColor: THEME.accent },
+  targetRepsFailureChipText: { color: '#888', fontSize: 12, fontWeight: '600' },
+  targetRepsFailureChipTextOn: { color: THEME.accent },
   modalAddSection: { marginTop: 8 },
   modalHistorySuggestions: { marginBottom: 12 },
   modalHistorySuggestionsLabel: { color: '#666', fontSize: 11, fontWeight: '600', marginBottom: 8, letterSpacing: 0.3 },
